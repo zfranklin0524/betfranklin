@@ -1,0 +1,218 @@
+import {
+  createContext,
+  useContext,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { useApp } from "./app-context";
+import { useCreateBet, useMarketPools } from "./api";
+import {
+  parimutuelEstPayout,
+  parimutuelMultiple,
+  multipleToAmerican,
+  formatOdds,
+  formatMoney,
+} from "@shared/schema";
+import type { MarketWithOptions } from "@shared/schema";
+
+type Pending = {
+  market: MarketWithOptions;
+  optionId: number;
+  label: string;
+};
+
+type Ctx = {
+  open: (p: Pending) => void;
+};
+
+const SlipCtx = createContext<Ctx>(null as unknown as Ctx);
+
+export function BetSlipProvider({ children }: { children: ReactNode }) {
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [stake, setStake] = useState<string>("10");
+  const { player } = useApp();
+  const { toast } = useToast();
+  const createBet = useCreateBet();
+  const pools = useMarketPools();
+
+  const open = (p: Pending) => {
+    if (!player) {
+      toast({
+        title: "Pick your name first",
+        description: "Select your name from the dropdown at the top to place bets.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setPending(p);
+    if (!stake) setStake("10");
+  };
+
+  const stakeNum = Number(stake) || 0;
+  const mp = pending ? pools.get(pending.market.id) : undefined;
+  const pool = mp?.pool ?? 0;
+  const moneyOnOption =
+    (pending ? mp?.perOption.get(pending.optionId) ?? 0 : 0);
+  // Live estimated payout if this bet were the last one in the pool.
+  const estPayout = pending
+    ? parimutuelEstPayout(stakeNum, pool, moneyOnOption)
+    : 0;
+  const estProfit = estPayout - stakeNum;
+  // Live implied odds for the option right now (before this bet).
+  const liveMultiple = parimutuelMultiple(pool, moneyOnOption);
+
+  const submit = () => {
+    if (!pending) return;
+    if (!player) {
+      toast({ title: "Pick your name first", variant: "destructive" });
+      return;
+    }
+    if (stakeNum <= 0) {
+      toast({ title: "Enter a stake greater than $0", variant: "destructive" });
+      return;
+    }
+    createBet.mutate(
+      {
+        playerId: player.id,
+        marketId: pending.market.id,
+        optionId: pending.optionId,
+        stake: stakeNum,
+      },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Bet placed",
+            description: `$${stakeNum} on ${pending.label} — est. payout ${formatMoney(
+              estPayout
+            )}`,
+          });
+          setPending(null);
+          setStake("10");
+        },
+        onError: (e: Error) =>
+          toast({ title: "Couldn't place bet", description: e.message, variant: "destructive" }),
+      }
+    );
+  };
+
+  return (
+    <SlipCtx.Provider value={{ open }}>
+      {children}
+      <Sheet open={!!pending} onOpenChange={(o) => !o && setPending(null)}>
+        <SheetContent className="w-full sm:max-w-sm flex flex-col gap-4">
+          <div className="h-[3px] fairway-stripes -mx-6 mt-0" />
+          <SheetHeader>
+            <p className="font-label text-[11px] text-muted-foreground">
+              Wager Ticket · Parimutuel
+            </p>
+            <SheetTitle className="font-display">Bet Slip</SheetTitle>
+            <SheetDescription>
+              {pending?.market.title}
+            </SheetDescription>
+          </SheetHeader>
+
+          {pending && (
+            <>
+              <div className="ticket p-3 flex items-center justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{pending.label}</p>
+                  <p className="font-label text-[11px] text-muted-foreground">
+                    {pending.market.category}
+                  </p>
+                </div>
+                <span
+                  className="stamp text-primary text-[10px] shrink-0"
+                  data-testid="text-slip-odds"
+                >
+                  {liveMultiple
+                    ? `${formatOdds(multipleToAmerican(liveMultiple))} live`
+                    : "first in"}
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="stake" className="font-label text-[11px] text-muted-foreground">
+                  Stake ($)
+                </Label>
+                <Input
+                  id="stake"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={stake}
+                  onChange={(e) => setStake(e.target.value)}
+                  data-testid="input-stake"
+                />
+              </div>
+
+              <div className="border border-dashed border-border bg-muted/40 p-3 space-y-1 text-sm">
+                <Row label="Stake" value={formatMoney(stakeNum)} />
+                <Row label="Est. profit" value={formatMoney(estProfit)} />
+                <div className="h-[2px] pinstripes opacity-50 my-1.5" />
+                <Row
+                  label="Est. payout if it hits"
+                  value={formatMoney(estPayout)}
+                  bold
+                />
+                <p className="text-[11px] leading-snug text-muted-foreground pt-1">
+                  Parimutuel: final payout depends on the pool when betting
+                  closes. Shown number is a live estimate.
+                </p>
+              </div>
+
+              <Button
+                onClick={submit}
+                disabled={createBet.isPending || !player}
+                className="w-full font-label tracking-wide"
+                data-testid="button-place-bet"
+              >
+                {createBet.isPending
+                  ? "Placing..."
+                  : player
+                    ? `Place bet as ${player.name}`
+                    : "Pick your name first"}
+              </Button>
+              {!player && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Choose your name from the top bar to place bets.
+                </p>
+              )}
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+    </SlipCtx.Provider>
+  );
+}
+
+function Row({
+  label,
+  value,
+  bold,
+}: {
+  label: string;
+  value: string;
+  bold?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="font-label text-[11px] text-muted-foreground">{label}</span>
+      <span className={`tabular ${bold ? "font-display" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
+export function useBetSlip() {
+  return useContext(SlipCtx);
+}
