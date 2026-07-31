@@ -55,18 +55,20 @@ import {
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, desc, sql } from "drizzle-orm";
+import { dirname } from "path";
+import { mkdirSync, unlinkSync } from "fs";
 
 let sqlite: Database.Database;
 const DB_PATH = process.env.DATABASE_PATH || "golf.db";
 // Ensure the parent directory exists (Railway volumes may need this)
-const dbDir = require("path").dirname(DB_PATH);
+const dbDir = dirname(DB_PATH);
 if (dbDir !== ".") {
-  try { require("fs").mkdirSync(dbDir, { recursive: true }); } catch {}
+  try { mkdirSync(dbDir, { recursive: true }); } catch {}
 }
 try {
   // Clean up any stale WAL/SHM files from previous WAL mode deployments
-  try { require("fs").unlinkSync(DB_PATH + "-wal"); } catch {}
-  try { require("fs").unlinkSync(DB_PATH + "-shm"); } catch {}
+  try { unlinkSync(DB_PATH + "-wal"); } catch {}
+  try { unlinkSync(DB_PATH + "-shm"); } catch {}
   sqlite = new Database(DB_PATH);
   sqlite.pragma("journal_mode = DELETE");
   sqlite.pragma("foreign_keys = ON");
@@ -74,9 +76,9 @@ try {
   sqlite.prepare("SELECT count(*) as c FROM players").get();
 } catch (err) {
   console.error("[storage] Database issue, recreating:", err);
-  try { require("fs").unlinkSync(DB_PATH); } catch {}
-  try { require("fs").unlinkSync(DB_PATH + "-wal"); } catch {}
-  try { require("fs").unlinkSync(DB_PATH + "-shm"); } catch {}
+  try { unlinkSync(DB_PATH); } catch {}
+  try { unlinkSync(DB_PATH + "-wal"); } catch {}
+  try { unlinkSync(DB_PATH + "-shm"); } catch {}
   sqlite = new Database(DB_PATH);
   sqlite.pragma("journal_mode = DELETE");
   sqlite.pragma("foreign_keys = ON");
@@ -255,6 +257,16 @@ sqlite.exec(`
     .all() as { id: number; category: string }[];
   const upd = sqlite.prepare("UPDATE markets SET cash_out_lock_at = ? WHERE id = ?");
   for (const m of needs) upd.run(defaultLockForCategory(m.category), m.id);
+};
+
+// Migrate: add bets.book_tag, distinguishing book bets created by different
+// features (e.g. "balance" from bookFillMarket vs "free_bet" from
+// grantFreeBet) so one feature's cleanup doesn't delete another's rows.
+{
+  const betCols = sqlite.pragma("table_info(bets)") as { name: string }[];
+  if (!betCols.some((c) => c.name === "book_tag")) {
+    sqlite.exec("ALTER TABLE bets ADD COLUMN book_tag TEXT");
+  }
 };
 
 export const db = drizzle(sqlite);
@@ -451,9 +463,11 @@ class DatabaseStorage {
     const book = this.getBookPlayer();
     if (!book) return;
 
-    // Remove any existing book bet first.
+    // Remove any existing balance book bet first (leave free-bet cover bets alone).
     sqlite
-      .prepare("DELETE FROM bets WHERE market_id = ? AND is_book = 1")
+      .prepare(
+        "DELETE FROM bets WHERE market_id = ? AND is_book = 1 AND (book_tag IS NULL OR book_tag = 'balance')"
+      )
       .run(marketId);
 
     const openBets = this.listBetsForMarket(marketId).filter(
@@ -479,15 +493,92 @@ class DatabaseStorage {
         payout: 0,
         status: "open",
         isBook: true,
+        bookTag: "balance",
       })
       .run();
   }
 
-  // Remove a pre-grade book fill from a market.
+  // Remove a pre-grade book fill from a market (leave free-bet cover bets alone).
   removeBookFill(marketId: number): void {
     sqlite
-      .prepare("DELETE FROM bets WHERE market_id = ? AND is_book = 1")
+      .prepare(
+        "DELETE FROM bets WHERE market_id = ? AND is_book = 1 AND (book_tag IS NULL OR book_tag = 'balance')"
+      )
       .run(marketId);
+  }
+
+  // Pick which option the book covers opposite a player's free-bet pick:
+  // prefer "Field (anyone else)" (a real bet that pays if the player isn't
+  // separately listed), else the option currently carrying the least stake.
+  private pickOpposingOption(
+    market: MarketWithOptions,
+    chosenOptionId: number
+  ): MarketOption {
+    const others = market.options.filter((o) => o.id !== chosenOptionId);
+    const field = others.find((o) => o.label.toLowerCase().startsWith("field"));
+    if (field) return field;
+    const openBets = this.listBetsForMarket(market.id).filter(
+      (b) => b.status !== "void"
+    );
+    const stakeByOption = new Map<number, number>(others.map((o) => [o.id, 0]));
+    for (const b of openBets) {
+      if (stakeByOption.has(b.optionId)) {
+        stakeByOption.set(b.optionId, (stakeByOption.get(b.optionId) ?? 0) + b.stake);
+      }
+    }
+    return others.reduce((min, o) =>
+      (stakeByOption.get(o.id) ?? 0) < (stakeByOption.get(min.id) ?? 0) ? o : min
+    );
+  }
+
+  // Grant a player a free bet comped by the house: credits their ledger for
+  // the stake (so it doesn't come out of their own buy-in), places their bet
+  // as normal, and instantly covers the other side with a matching Book bet
+  // on a different option — so it's a real, fully-matched wager the moment
+  // it's granted, independent of what other players do.
+  grantFreeBet(
+    playerId: number,
+    marketId: number,
+    optionId: number,
+    stakeDollars = 10
+  ): { bet: Bet; bookBet: Bet } {
+    const market = this.getMarket(marketId);
+    if (!market) throw new Error("Market not found");
+    const option = market.options.find((o) => o.id === optionId);
+    if (!option) throw new Error("Option not found on market");
+    const book = this.getBookPlayer();
+    if (!book) throw new Error("Book player not found");
+    if (book.id === playerId)
+      throw new Error("Cannot grant a free bet to the book player");
+    const player = this.getPlayer(playerId);
+    if (!player) throw new Error("Player not found");
+
+    this.addLedgerEntry(
+      playerId,
+      "free_bet",
+      Math.round(stakeDollars * 100),
+      `Free $${stakeDollars} bet — ${market.title} (${option.label})`
+    );
+
+    const bet = this.createBet({ playerId, marketId, optionId, stake: stakeDollars });
+
+    const opposing = this.pickOpposingOption(market, optionId);
+    const bookBet = db
+      .insert(bets)
+      .values({
+        playerId: book.id,
+        marketId,
+        optionId: opposing.id,
+        stake: stakeDollars,
+        payout: 0,
+        status: "open",
+        isBook: true,
+        bookTag: "free_bet",
+      })
+      .returning()
+      .get();
+
+    return { bet, bookBet };
   }
 
   /* ----- Settlement (right-sized pool) ----- */

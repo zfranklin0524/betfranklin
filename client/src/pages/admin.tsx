@@ -40,6 +40,7 @@ import {
   useMatchSummaries,
   useScoreTokens,
   useGenerateToken,
+  useGrantFreeBet,
   type MarketPool,
 } from "@/lib/api";
 import {
@@ -121,6 +122,7 @@ export default function Admin() {
           <MarketAdminList />
         </TabsContent>
         <TabsContent value="bets" className="mt-4 space-y-4">
+          <GrantFreeBet />
           <BetsAdmin />
         </TabsContent>
         <TabsContent value="roster" className="mt-4 space-y-4">
@@ -560,6 +562,101 @@ function RosterAdmin() {
 }
 
 /* ---------- Bets (admin cancel) ---------- */
+/* ---------- Grant free bet (book-covered comp) ---------- */
+function GrantFreeBet() {
+  const { data: players } = usePlayers();
+  const { data: markets } = useMarkets();
+  const grant = useGrantFreeBet();
+  const { toast } = useToast();
+  const [playerId, setPlayerId] = useState<string>("");
+  const [marketId, setMarketId] = useState<string>("");
+  const [optionId, setOptionId] = useState<string>("");
+  const [stake, setStake] = useState("10");
+
+  const openMarkets = (markets ?? []).filter((m) => m.status === "open");
+  const market = openMarkets.find((m) => m.id === Number(marketId));
+
+  const submit = () => {
+    const stakeDollars = Number(stake);
+    if (!playerId || !marketId || !optionId || !(stakeDollars > 0)) return;
+    grant.mutate(
+      { playerId: Number(playerId), marketId: Number(marketId), optionId: Number(optionId), stakeDollars },
+      {
+        onSuccess: () => {
+          const p = players?.find((p) => p.id === Number(playerId));
+          toast({ title: `Free $${stakeDollars} bet granted to ${p?.name ?? "player"} — book covered the other side` });
+          setPlayerId("");
+          setMarketId("");
+          setOptionId("");
+          setStake("10");
+        },
+        onError: (err: any) => toast({ title: "Failed to grant free bet", description: err?.message, variant: "destructive" }),
+      }
+    );
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div>
+          <h2 className="font-display text-sm">Grant Free Bet</h2>
+          <p className="text-xs text-muted-foreground">
+            Comps a bet — the stake doesn't touch the player's own ledger, and the book instantly takes the other side so it's a real matched wager.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="font-label text-[11px]">Player</Label>
+            <Select value={playerId} onValueChange={setPlayerId}>
+              <SelectTrigger><SelectValue placeholder="Select player" /></SelectTrigger>
+              <SelectContent>
+                {(players ?? []).map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="font-label text-[11px]">Market</Label>
+            <Select value={marketId} onValueChange={(v) => { setMarketId(v); setOptionId(""); }}>
+              <SelectTrigger><SelectValue placeholder="Select market" /></SelectTrigger>
+              <SelectContent>
+                {openMarkets.map((m) => (
+                  <SelectItem key={m.id} value={String(m.id)}>{m.title}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="font-label text-[11px]">Option (their pick)</Label>
+            <Select value={optionId} onValueChange={setOptionId} disabled={!market}>
+              <SelectTrigger><SelectValue placeholder="Select option" /></SelectTrigger>
+              <SelectContent>
+                {(market?.options ?? []).map((o) => (
+                  <SelectItem key={o.id} value={String(o.id)}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="font-label text-[11px]">Stake ($)</Label>
+            <Input type="number" min="1" value={stake} onChange={(e) => setStake(e.target.value)} />
+          </div>
+        </div>
+        <Button
+          size="sm"
+          className="font-label"
+          disabled={grant.isPending || !playerId || !marketId || !optionId}
+          onClick={submit}
+          data-testid="button-grant-free-bet"
+        >
+          Grant Free Bet
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function BetsAdmin() {
   const { data: bets, isLoading } = useBets();
   const voidBet = useVoidBet();

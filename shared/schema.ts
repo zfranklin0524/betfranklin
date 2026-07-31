@@ -78,6 +78,11 @@ export const bets = sqliteTable("bets", {
   // winning totals but included in the pool. Omitted from insertBetSchema so
   // normal bet creation cannot spoof book bets.
   isBook: integer("is_book", { mode: "boolean" }).notNull().default(false),
+  // Distinguishes what kind of book bet this is, so different book-bet
+  // features don't clobber each other's rows (e.g. bookFillMarket's
+  // pre-grade balancing shouldn't delete a free-bet's cover bet). Null for
+  // normal (non-book) bets.
+  bookTag: text("book_tag"),
   createdAt: integer("created_at").notNull().default(Date.now()),
 });
 
@@ -87,6 +92,7 @@ export const insertBetSchema = createInsertSchema(bets).omit({
   status: true,
   payout: true,
   isBook: true,
+  bookTag: true,
 }).extend({
   stake: z.number().positive(),
 });

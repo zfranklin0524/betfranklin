@@ -24,6 +24,12 @@ import { ADMIN_PIN } from "@shared/schema";
 
 const PIN_HEADERS = { "x-admin-pin": ADMIN_PIN };
 
+// Live scoring data (scoreboard, match play, score entry) polls so results
+// entered via a unique scoring link show up for other viewers without a
+// manual reload. refetchIntervalInBackground keeps it polling even on a
+// screen (e.g. a shared TV) that isn't the OS-focused window.
+const LIVE_QUERY_OPTS = { refetchInterval: 5000, refetchIntervalInBackground: true } as const;
+
 export const QK = {
   players: ["/api/players"],
   markets: ["/api/markets"],
@@ -59,7 +65,7 @@ export function useStandings() {
   return useQuery<PlayerStanding[]>({ queryKey: QK.standings });
 }
 export function useScores() {
-  return useQuery<RoundScore[]>({ queryKey: QK.scores });
+  return useQuery<RoundScore[]>({ queryKey: QK.scores, ...LIVE_QUERY_OPTS });
 }
 export function usePlayerBets(playerId: number | null) {
   return useQuery<BetWithContext[]>({
@@ -239,6 +245,15 @@ export function useRemoveBookFill() {
   });
 }
 
+// Grant a free bet comped by the house — the book instantly covers the other side.
+export function useGrantFreeBet() {
+  return useMutation({
+    mutationFn: (data: { playerId: number; marketId: number; optionId: number; stakeDollars?: number }) =>
+      apiRequest("POST", "/api/free-bets", data, PIN_HEADERS).then((r) => r.json()),
+    onSuccess: () => invalidateAll(),
+  });
+}
+
 export function useResetAll() {
   return useMutation({
     mutationFn: () =>
@@ -302,7 +317,7 @@ export function useManualSkinsPayout() {
 
 /* ---------- Scramble Units ---------- */
 export function useScrambleUnits() {
-  return useQuery<ScrambleUnitWithMembers[]>({ queryKey: QK.units });
+  return useQuery<ScrambleUnitWithMembers[]>({ queryKey: QK.units, ...LIVE_QUERY_OPTS });
 }
 export function useCreateScrambleUnit() {
   return useMutation({
@@ -323,7 +338,7 @@ export function useHoleScores() {
   return useQuery<HoleScore[]>({ queryKey: QK.holeScores });
 }
 export function useHoleScoresByDay(day: number) {
-  return useQuery<HoleScore[]>({ queryKey: QK.holeScoresByDay(day) });
+  return useQuery<HoleScore[]>({ queryKey: QK.holeScoresByDay(day), ...LIVE_QUERY_OPTS });
 }
 export function useUpsertHoleScore() {
   return useMutation({
@@ -391,7 +406,7 @@ export function useFinalizeCTPHole() {
 
 /* ---------- Team Points ---------- */
 export function useTeamPoints() {
-  return useQuery<TeamPoints[]>({ queryKey: QK.teamPoints });
+  return useQuery<TeamPoints[]>({ queryKey: QK.teamPoints, ...LIVE_QUERY_OPTS });
 }
 export function useUpsertTeamPoints() {
   return useMutation({
@@ -442,13 +457,13 @@ export function useVoidMarket() {
 
 /* ---------- Match Play ---------- */
 export function useMatchSummaries(day: number) {
-  return useQuery<MatchSummary[]>({ queryKey: QK.matchSummaries(day) });
+  return useQuery<MatchSummary[]>({ queryKey: QK.matchSummaries(day), ...LIVE_QUERY_OPTS });
 }
 export function useMatchTotals(day: number) {
-  return useQuery<{ tommy: number; goon: number; halved: number }>({ queryKey: QK.matchTotals(day) });
+  return useQuery<{ tommy: number; goon: number; halved: number }>({ queryKey: QK.matchTotals(day), ...LIVE_QUERY_OPTS });
 }
 export function useScoreEntry(token: string) {
-  return useQuery<MatchScoreEntry>({ queryKey: ["/api/score", token], enabled: !!token });
+  return useQuery<MatchScoreEntry>({ queryKey: ["/api/score", token], enabled: !!token, ...LIVE_QUERY_OPTS });
 }
 export function useSubmitHoleResult(token: string) {
   return useMutation({

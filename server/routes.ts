@@ -199,6 +199,26 @@ export function registerRoutes(_httpServer: any, app: Express) {
     res.json({ ok: true });
   });
 
+  // Grant a free bet comped by the house — credits the player's ledger for
+  // the stake and instantly covers the other side with a Book bet.
+  const freeBetSchema = z.object({
+    playerId: z.number(),
+    marketId: z.number(),
+    optionId: z.number(),
+    stakeDollars: z.number().positive().optional(),
+  });
+  app.post("/api/free-bets", requirePin, (req, res) => {
+    const parsed = freeBetSchema.safeParse(req.body);
+    if (!parsed.success)
+      return res.status(400).json({ message: "Invalid free bet request" });
+    const { playerId, marketId, optionId, stakeDollars } = parsed.data;
+    try {
+      res.json(storage.grantFreeBet(playerId, marketId, optionId, stakeDollars ?? 10));
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to grant free bet" });
+    }
+  });
+
   /* ---------- Standings ---------- */
   app.get("/api/standings", (_req, res) => {
     res.json(storage.standings());
