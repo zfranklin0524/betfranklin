@@ -185,7 +185,7 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
                     data-testid="checkbox-use-free-bet"
                   />
                   <Label htmlFor="use-free-bet" className="text-sm leading-snug cursor-pointer">
-                    Use your free ${(pendingFreeBet.amountCents / 100).toFixed(0)} bet — comped, covered by the book.
+                    Use your free ${(pendingFreeBet.amountCents / 100).toFixed(0)} bet — comped, covered by betFranklin the player's book.
                   </Label>
                 </div>
               )}

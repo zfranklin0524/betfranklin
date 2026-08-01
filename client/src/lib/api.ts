@@ -261,6 +261,7 @@ export function useFreeBetGrantsForPlayer(playerId: number | null) {
   return useQuery<FreeBetGrantWithContext[]>({
     queryKey: QK.freeBetGrantsForPlayer(playerId ?? -1),
     enabled: playerId != null,
+    ...LIVE_QUERY_OPTS,
   });
 }
 // Admin: grant a player eligibility for a free bet (no market chosen yet).
