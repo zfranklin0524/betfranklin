@@ -18,6 +18,7 @@ import {
   matchHoleResults,
   scoreTokens,
   sideBets,
+  freeBetGrants,
   BUY_IN_CENTS,
   TEAM_POT_PER_PLAYER,
   CTP_POT_PER_PLAYER,
@@ -51,6 +52,8 @@ import {
   type SkinsDayResult,
   type PlayerStanding,
   type PotPayout,
+  type FreeBetGrant,
+  type FreeBetGrantWithContext,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -220,6 +223,19 @@ sqlite.exec(`
     winner_id INTEGER REFERENCES players(id),
     created_at INTEGER NOT NULL,
     settled_at INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS free_bet_grants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    amount_cents INTEGER NOT NULL DEFAULT 1000,
+    status TEXT NOT NULL DEFAULT 'pending',
+    market_id INTEGER,
+    option_id INTEGER,
+    bet_id INTEGER,
+    book_bet_id INTEGER,
+    ledger_entry_id INTEGER,
+    created_at INTEGER NOT NULL,
+    used_at INTEGER
   );
 `);
 
@@ -531,36 +547,96 @@ class DatabaseStorage {
     );
   }
 
-  // Grant a player a free bet comped by the house: credits their ledger for
-  // the stake (so it doesn't come out of their own buy-in), places their bet
-  // as normal, and instantly covers the other side with a matching Book bet
-  // on a different option — so it's a real, fully-matched wager the moment
-  // it's granted, independent of what other players do.
-  grantFreeBet(
-    playerId: number,
-    marketId: number,
-    optionId: number,
-    stakeDollars = 10
-  ): { bet: Bet; bookBet: Bet } {
+  /* ----- Free Bet Grants (comped bets, redeemed by the player) ----- */
+  // Grant a player an eligibility to place one free bet — an entitlement,
+  // not a placed bet. The player (or commish, on their behalf) later
+  // redeems it on whatever open market they choose via redeemFreeBet().
+  grantFreeBetEligibility(playerId: number, amountCents = 1000): FreeBetGrant {
+    const player = this.getPlayer(playerId);
+    if (!player) throw new Error("Player not found");
+    return db
+      .insert(freeBetGrants)
+      .values({ playerId, amountCents, status: "pending" })
+      .returning()
+      .get();
+  }
+
+  listFreeBetGrants(): FreeBetGrantWithContext[] {
+    const grants = db.select().from(freeBetGrants).orderBy(desc(freeBetGrants.createdAt)).all();
+    return this.withFreeBetGrantContext(grants);
+  }
+
+  listFreeBetGrantsForPlayer(playerId: number): FreeBetGrantWithContext[] {
+    const grants = db
+      .select()
+      .from(freeBetGrants)
+      .where(eq(freeBetGrants.playerId, playerId))
+      .orderBy(desc(freeBetGrants.createdAt))
+      .all();
+    return this.withFreeBetGrantContext(grants);
+  }
+
+  private withFreeBetGrantContext(grants: FreeBetGrant[]): FreeBetGrantWithContext[] {
+    const playerMap = new Map(this.listPlayers().map((p) => [p.id, p]));
+    const marketMap = new Map(this.listMarkets().map((m) => [m.id, m]));
+    return grants.map((g) => {
+      const market = g.marketId ? marketMap.get(g.marketId) : undefined;
+      const option = market?.options.find((o) => o.id === g.optionId);
+      return {
+        ...g,
+        player: { id: g.playerId, name: playerMap.get(g.playerId)?.name ?? "Unknown" },
+        market: market ? { id: market.id, title: market.title } : null,
+        option: option ? { id: option.id, label: option.label } : null,
+      };
+    });
+  }
+
+  // Undo a grant's current placement (if any): void both bets and remove the
+  // ledger credit. Safe to call on a still-pending grant (no-op).
+  private reverseFreeBetUsage(grant: FreeBetGrant): void {
+    if (grant.betId) this.voidBet(grant.betId);
+    if (grant.bookBetId) this.voidBet(grant.bookBetId);
+    if (grant.ledgerEntryId) {
+      sqlite.prepare("DELETE FROM ledger_entries WHERE id = ?").run(grant.ledgerEntryId);
+    }
+  }
+
+  // Redeem a free bet grant on a market/option the player picked themselves.
+  // Credits their ledger for the stake (doesn't touch their own buy-in),
+  // places their bet, and instantly covers the other side with a matching
+  // Book bet — a real, fully-matched wager independent of other players.
+  // Redeeming an already-used grant re-points it: the prior placement is
+  // reversed first, so someone can change their pick.
+  redeemFreeBet(grantId: number, marketId: number, optionId: number): { bet: Bet; bookBet: Bet } {
+    const grant = db.select().from(freeBetGrants).where(eq(freeBetGrants.id, grantId)).get();
+    if (!grant) throw new Error("Free bet grant not found");
+    if (grant.status === "revoked") throw new Error("This free bet has been revoked");
     const market = this.getMarket(marketId);
     if (!market) throw new Error("Market not found");
+    if (market.status !== "open") throw new Error("Market is not open for betting");
     const option = market.options.find((o) => o.id === optionId);
     if (!option) throw new Error("Option not found on market");
     const book = this.getBookPlayer();
     if (!book) throw new Error("Book player not found");
-    if (book.id === playerId)
-      throw new Error("Cannot grant a free bet to the book player");
-    const player = this.getPlayer(playerId);
-    if (!player) throw new Error("Player not found");
+    if (book.id === grant.playerId)
+      throw new Error("Cannot redeem a free bet for the book player");
 
-    this.addLedgerEntry(
-      playerId,
+    if (grant.status === "used") this.reverseFreeBetUsage(grant);
+
+    const stakeDollars = grant.amountCents / 100;
+    const ledgerEntry = this.addLedgerEntry(
+      grant.playerId,
       "free_bet",
-      Math.round(stakeDollars * 100),
+      grant.amountCents,
       `Free $${stakeDollars} bet — ${market.title} (${option.label})`
     );
 
-    const bet = this.createBet({ playerId, marketId, optionId, stake: stakeDollars });
+    const bet = this.createBet({
+      playerId: grant.playerId,
+      marketId,
+      optionId,
+      stake: stakeDollars,
+    });
 
     const opposing = this.pickOpposingOption(market, optionId);
     const bookBet = db
@@ -578,7 +654,28 @@ class DatabaseStorage {
       .returning()
       .get();
 
+    db.update(freeBetGrants)
+      .set({
+        status: "used",
+        marketId,
+        optionId,
+        betId: bet.id,
+        bookBetId: bookBet.id,
+        ledgerEntryId: ledgerEntry.id,
+        usedAt: Date.now(),
+      })
+      .where(eq(freeBetGrants.id, grantId))
+      .run();
+
     return { bet, bookBet };
+  }
+
+  // Revoke a grant entirely: undoes any placement and deletes the grant row.
+  revokeFreeBetGrant(grantId: number): void {
+    const grant = db.select().from(freeBetGrants).where(eq(freeBetGrants.id, grantId)).get();
+    if (!grant) return;
+    this.reverseFreeBetUsage(grant);
+    db.delete(freeBetGrants).where(eq(freeBetGrants.id, grantId)).run();
   }
 
   /* ----- Settlement (right-sized pool) ----- */
@@ -802,8 +899,12 @@ class DatabaseStorage {
   listLedgerEntries(): LedgerEntry[] {
     return db.select().from(ledgerEntries).orderBy(desc(ledgerEntries.createdAt)).all();
   }
-  addLedgerEntry(playerId: number, sourceType: string, amountCents: number, description?: string, sourceId?: number): void {
-    db.insert(ledgerEntries).values({ playerId, sourceType, sourceId: sourceId ?? null, amountCents, description: description ?? null }).run();
+  addLedgerEntry(playerId: number, sourceType: string, amountCents: number, description?: string, sourceId?: number): LedgerEntry {
+    return db.insert(ledgerEntries).values({ playerId, sourceType, sourceId: sourceId ?? null, amountCents, description: description ?? null }).returning().get();
+  }
+  // Admin correction: remove a single mistaken ledger entry by id.
+  deleteLedgerEntry(id: number): void {
+    db.delete(ledgerEntries).where(eq(ledgerEntries.id, id)).run();
   }
   deleteLedgerBySource(sourceType: string, sourceId?: number): void {
     if (sourceId !== undefined) {

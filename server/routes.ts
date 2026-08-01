@@ -199,24 +199,63 @@ export function registerRoutes(_httpServer: any, app: Express) {
     res.json({ ok: true });
   });
 
-  // Grant a free bet comped by the house — credits the player's ledger for
-  // the stake and instantly covers the other side with a Book bet.
-  const freeBetSchema = z.object({
+  /* ---------- Free Bet Grants (comped bets, redeemed by the player) ---------- */
+  // Admin: grant a player eligibility for a free bet (no market chosen yet).
+  const grantFreeBetSchema = z.object({
     playerId: z.number(),
-    marketId: z.number(),
-    optionId: z.number(),
-    stakeDollars: z.number().positive().optional(),
+    amountCents: z.number().positive().optional(),
   });
   app.post("/api/free-bets", requirePin, (req, res) => {
-    const parsed = freeBetSchema.safeParse(req.body);
+    const parsed = grantFreeBetSchema.safeParse(req.body);
     if (!parsed.success)
-      return res.status(400).json({ message: "Invalid free bet request" });
-    const { playerId, marketId, optionId, stakeDollars } = parsed.data;
+      return res.status(400).json({ message: "Invalid free bet grant" });
+    const { playerId, amountCents } = parsed.data;
     try {
-      res.json(storage.grantFreeBet(playerId, marketId, optionId, stakeDollars ?? 10));
+      res.json(storage.grantFreeBetEligibility(playerId, amountCents ?? 1000));
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Failed to grant free bet" });
     }
+  });
+
+  // Admin: list every grant (any status).
+  app.get("/api/free-bets", requirePin, (_req, res) => {
+    res.json(storage.listFreeBetGrants());
+  });
+
+  // Public: a player's own grants, so the UI can show "you have a free bet".
+  app.get("/api/free-bets/player/:playerId", (req, res) => {
+    res.json(storage.listFreeBetGrantsForPlayer(Number(req.params.playerId)));
+  });
+
+  // Player redeems their own grant on a market/option they picked. Soft
+  // ownership check via playerId in the body, like /api/bets/:id/cashout —
+  // this is a player action (placing their own bet), not an admin action.
+  const redeemFreeBetSchema = z.object({
+    playerId: z.number(),
+    marketId: z.number(),
+    optionId: z.number(),
+  });
+  app.post("/api/free-bets/:id/redeem", (req, res) => {
+    const parsed = redeemFreeBetSchema.safeParse(req.body);
+    if (!parsed.success)
+      return res.status(400).json({ message: "Invalid redemption request" });
+    const id = Number(req.params.id);
+    const grants = storage.listFreeBetGrants();
+    const grant = grants.find((g) => g.id === id);
+    if (!grant) return res.status(404).json({ message: "Free bet grant not found" });
+    if (grant.playerId !== parsed.data.playerId)
+      return res.status(403).json({ message: "Not your free bet" });
+    try {
+      res.json(storage.redeemFreeBet(id, parsed.data.marketId, parsed.data.optionId));
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to redeem free bet" });
+    }
+  });
+
+  // Admin: revoke a grant (undoes any placement and removes it).
+  app.delete("/api/free-bets/:id", requirePin, (req, res) => {
+    storage.revokeFreeBetGrant(Number(req.params.id));
+    res.json({ ok: true });
   });
 
   /* ---------- Standings ---------- */
@@ -285,6 +324,12 @@ export function registerRoutes(_httpServer: any, app: Express) {
   /* ---------- Ledger ---------- */
   app.get("/api/ledger", (_req, res) => {
     res.json(storage.listLedgerEntries());
+  });
+
+  // Admin correction: remove a single mistaken ledger entry.
+  app.delete("/api/ledger/:id", requirePin, (req, res) => {
+    storage.deleteLedgerEntry(Number(req.params.id));
+    res.json({ ok: true });
   });
 
   /* ---------- Scramble Units ---------- */

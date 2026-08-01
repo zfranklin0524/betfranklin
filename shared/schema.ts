@@ -324,6 +324,35 @@ export const matchHoleResults = sqliteTable("match_hole_results", {
 });
 export type MatchHoleResult = typeof matchHoleResults.$inferSelect;
 
+/* ---------- Free Bet Grants (comped bets, book-covered) ---------- */
+// status: pending (not yet spent) | used (placed on a market) | revoked
+// A grant is an entitlement, not a bet — the player redeems it themselves on
+// whatever open market they choose (any market, not the 30W pool). Redeeming
+// stakes the amount on their pick and instantly covers the other side with a
+// matching Book bet. Re-redeeming (picking a different market) reverses the
+// prior placement first, so a grant can be repointed if someone changes
+// their mind.
+export const freeBetGrants = sqliteTable("free_bet_grants", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  playerId: integer("player_id").notNull().references(() => players.id, { onDelete: "cascade" }),
+  amountCents: integer("amount_cents").notNull().default(1000),
+  status: text("status").notNull().default("pending"),
+  marketId: integer("market_id"),
+  optionId: integer("option_id"),
+  betId: integer("bet_id"),
+  bookBetId: integer("book_bet_id"),
+  ledgerEntryId: integer("ledger_entry_id"),
+  createdAt: integer("created_at").notNull().default(Date.now()),
+  usedAt: integer("used_at"),
+});
+export type FreeBetGrant = typeof freeBetGrants.$inferSelect;
+
+export interface FreeBetGrantWithContext extends FreeBetGrant {
+  player: { id: number; name: string };
+  market: { id: number; title: string } | null;
+  option: { id: number; label: string } | null;
+}
+
 export const scoreTokens = sqliteTable("score_tokens", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   token: text("token").notNull().unique(),

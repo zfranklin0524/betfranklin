@@ -40,7 +40,9 @@ import {
   useMatchSummaries,
   useScoreTokens,
   useGenerateToken,
-  useGrantFreeBet,
+  useFreeBetGrants,
+  useGrantFreeBetEligibility,
+  useRevokeFreeBetGrant,
   type MarketPool,
 } from "@/lib/api";
 import {
@@ -562,33 +564,27 @@ function RosterAdmin() {
 }
 
 /* ---------- Bets (admin cancel) ---------- */
-/* ---------- Grant free bet (book-covered comp) ---------- */
+/* ---------- Grant free bet eligibility (player picks the market themselves) ---------- */
 function GrantFreeBet() {
   const { data: players } = usePlayers();
-  const { data: markets } = useMarkets();
-  const grant = useGrantFreeBet();
+  const { data: grants } = useFreeBetGrants();
+  const grant = useGrantFreeBetEligibility();
+  const revoke = useRevokeFreeBetGrant();
   const { toast } = useToast();
   const [playerId, setPlayerId] = useState<string>("");
-  const [marketId, setMarketId] = useState<string>("");
-  const [optionId, setOptionId] = useState<string>("");
-  const [stake, setStake] = useState("10");
-
-  const openMarkets = (markets ?? []).filter((m) => m.status === "open");
-  const market = openMarkets.find((m) => m.id === Number(marketId));
+  const [amount, setAmount] = useState("10");
 
   const submit = () => {
-    const stakeDollars = Number(stake);
-    if (!playerId || !marketId || !optionId || !(stakeDollars > 0)) return;
+    const amountDollars = Number(amount);
+    if (!playerId || !(amountDollars > 0)) return;
     grant.mutate(
-      { playerId: Number(playerId), marketId: Number(marketId), optionId: Number(optionId), stakeDollars },
+      { playerId: Number(playerId), amountCents: Math.round(amountDollars * 100) },
       {
         onSuccess: () => {
           const p = players?.find((p) => p.id === Number(playerId));
-          toast({ title: `Free $${stakeDollars} bet granted to ${p?.name ?? "player"} — book covered the other side` });
+          toast({ title: `Free $${amountDollars} bet granted to ${p?.name ?? "player"}`, description: "They can now place it on any market themselves." });
           setPlayerId("");
-          setMarketId("");
-          setOptionId("");
-          setStake("10");
+          setAmount("10");
         },
         onError: (err: any) => toast({ title: "Failed to grant free bet", description: err?.message, variant: "destructive" }),
       }
@@ -597,11 +593,11 @@ function GrantFreeBet() {
 
   return (
     <Card>
-      <CardContent className="p-4 space-y-3">
+      <CardContent className="p-4 space-y-4">
         <div>
           <h2 className="font-display text-sm">Grant Free Bet</h2>
           <p className="text-xs text-muted-foreground">
-            Comps a bet — the stake doesn't touch the player's own ledger, and the book instantly takes the other side so it's a real matched wager.
+            Grants eligibility only — the player picks any market/option themselves when placing a bet, and the book instantly covers the other side. The stake doesn't touch their own ledger.
           </p>
         </div>
         <div className="grid sm:grid-cols-2 gap-3">
@@ -617,41 +613,55 @@ function GrantFreeBet() {
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px]">Market</Label>
-            <Select value={marketId} onValueChange={(v) => { setMarketId(v); setOptionId(""); }}>
-              <SelectTrigger><SelectValue placeholder="Select market" /></SelectTrigger>
-              <SelectContent>
-                {openMarkets.map((m) => (
-                  <SelectItem key={m.id} value={String(m.id)}>{m.title}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="font-label text-[11px]">Option (their pick)</Label>
-            <Select value={optionId} onValueChange={setOptionId} disabled={!market}>
-              <SelectTrigger><SelectValue placeholder="Select option" /></SelectTrigger>
-              <SelectContent>
-                {(market?.options ?? []).map((o) => (
-                  <SelectItem key={o.id} value={String(o.id)}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="font-label text-[11px]">Stake ($)</Label>
-            <Input type="number" min="1" value={stake} onChange={(e) => setStake(e.target.value)} />
+            <Label className="font-label text-[11px]">Amount ($)</Label>
+            <Input type="number" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </div>
         </div>
         <Button
           size="sm"
           className="font-label"
-          disabled={grant.isPending || !playerId || !marketId || !optionId}
+          disabled={grant.isPending || !playerId}
           onClick={submit}
           data-testid="button-grant-free-bet"
         >
           Grant Free Bet
         </Button>
+
+        {grants && grants.length > 0 && (
+          <div className="pt-2 border-t border-border">
+            <p className="font-label text-[11px] text-muted-foreground mb-2">Grants ({grants.length})</p>
+            <ol className="divide-y divide-border">
+              {grants.map((g) => (
+                <li key={g.id} className="py-2 flex items-center gap-2 text-sm">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{g.player.name}</span>
+                      <Badge variant="secondary" className="border-0 capitalize">{g.status}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {formatMoney(g.amountCents / 100)}
+                      {g.market ? ` · ${g.market.title}${g.option ? ` (${g.option.label})` : ""}` : " · not yet placed"}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 font-label"
+                    disabled={revoke.isPending}
+                    onClick={() => {
+                      revoke.mutate(g.id, {
+                        onSuccess: () => toast({ title: "Free bet grant revoked" }),
+                      });
+                    }}
+                    data-testid={`button-revoke-free-bet-${g.id}`}
+                  >
+                    Revoke
+                  </Button>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

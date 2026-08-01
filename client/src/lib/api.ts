@@ -19,6 +19,7 @@ import type {
   InsertSideBet,
   MatchSummary,
   MatchScoreEntry,
+  FreeBetGrantWithContext,
 } from "@shared/schema";
 import { ADMIN_PIN } from "@shared/schema";
 
@@ -50,6 +51,8 @@ export const QK = {
   matchSummaries: (day: number) => ["/api/matches/summaries", day],
   matchTotals: (day: number) => ["/api/matches/totals", day],
   scoreTokens: ["/api/score-tokens"],
+  freeBetGrants: ["/api/free-bets"],
+  freeBetGrantsForPlayer: (id: number) => ["/api/free-bets/player", id],
 };
 
 export function usePlayers() {
@@ -113,6 +116,8 @@ function invalidateAll() {
   queryClient.invalidateQueries({ queryKey: QK.ctp });
   queryClient.invalidateQueries({ queryKey: QK.teamPoints });
   queryClient.invalidateQueries({ queryKey: QK.sideBets });
+  queryClient.invalidateQueries({ queryKey: QK.freeBetGrants });
+  queryClient.invalidateQueries({ queryKey: ["/api/free-bets/player"] });
 }
 
 export function useCreatePlayer() {
@@ -245,11 +250,40 @@ export function useRemoveBookFill() {
   });
 }
 
-// Grant a free bet comped by the house — the book instantly covers the other side.
-export function useGrantFreeBet() {
+/* ---------- Free Bet Grants (comped bets, redeemed by the player) ---------- */
+export function useFreeBetGrants() {
+  return useQuery<FreeBetGrantWithContext[]>({
+    queryKey: QK.freeBetGrants,
+    queryFn: () => apiRequest("GET", "/api/free-bets", undefined, PIN_HEADERS).then((r) => r.json()),
+  });
+}
+export function useFreeBetGrantsForPlayer(playerId: number | null) {
+  return useQuery<FreeBetGrantWithContext[]>({
+    queryKey: QK.freeBetGrantsForPlayer(playerId ?? -1),
+    enabled: playerId != null,
+  });
+}
+// Admin: grant a player eligibility for a free bet (no market chosen yet).
+export function useGrantFreeBetEligibility() {
   return useMutation({
-    mutationFn: (data: { playerId: number; marketId: number; optionId: number; stakeDollars?: number }) =>
+    mutationFn: (data: { playerId: number; amountCents?: number }) =>
       apiRequest("POST", "/api/free-bets", data, PIN_HEADERS).then((r) => r.json()),
+    onSuccess: () => invalidateAll(),
+  });
+}
+// Player redeems their own grant on a market/option they picked — the book
+// instantly covers the other side. Re-redeeming re-points an already-used grant.
+export function useRedeemFreeBet() {
+  return useMutation({
+    mutationFn: ({ id, playerId, marketId, optionId }: { id: number; playerId: number; marketId: number; optionId: number }) =>
+      apiRequest("POST", `/api/free-bets/${id}/redeem`, { playerId, marketId, optionId }).then((r) => r.json()),
+    onSuccess: () => invalidateAll(),
+  });
+}
+export function useRevokeFreeBetGrant() {
+  return useMutation({
+    mutationFn: (id: number) =>
+      apiRequest("DELETE", `/api/free-bets/${id}`, undefined, PIN_HEADERS).then((r) => r.json()),
     onSuccess: () => invalidateAll(),
   });
 }

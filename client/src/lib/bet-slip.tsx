@@ -14,9 +14,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useApp } from "./app-context";
-import { useCreateBet, useMarketPools } from "./api";
+import { useCreateBet, useMarketPools, useFreeBetGrantsForPlayer, useRedeemFreeBet } from "./api";
 import {
   parimutuelEstPayout,
   parimutuelMultiple,
@@ -41,10 +42,14 @@ const SlipCtx = createContext<Ctx>(null as unknown as Ctx);
 export function BetSlipProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<Pending | null>(null);
   const [stake, setStake] = useState<string>("10");
+  const [useFreeBet, setUseFreeBet] = useState(false);
   const { player } = useApp();
   const { toast } = useToast();
   const createBet = useCreateBet();
+  const redeemFreeBet = useRedeemFreeBet();
   const pools = useMarketPools();
+  const { data: freeBetGrants } = useFreeBetGrantsForPlayer(player?.id ?? null);
+  const pendingFreeBet = freeBetGrants?.find((g) => g.status === "pending");
 
   const open = (p: Pending) => {
     if (!player) {
@@ -56,10 +61,14 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
       return;
     }
     setPending(p);
+    setUseFreeBet(false);
     if (!stake) setStake("10");
   };
 
-  const stakeNum = Number(stake) || 0;
+  const applyingFreeBet = useFreeBet && !!pendingFreeBet;
+  const stakeNum = applyingFreeBet
+    ? (pendingFreeBet!.amountCents / 100)
+    : Number(stake) || 0;
   const mp = pending ? pools.get(pending.market.id) : undefined;
   const pool = mp?.pool ?? 0;
   const moneyOnOption =
@@ -82,6 +91,32 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
       toast({ title: "Enter a stake greater than $0", variant: "destructive" });
       return;
     }
+
+    if (applyingFreeBet) {
+      redeemFreeBet.mutate(
+        {
+          id: pendingFreeBet!.id,
+          playerId: player.id,
+          marketId: pending.market.id,
+          optionId: pending.optionId,
+        },
+        {
+          onSuccess: () => {
+            toast({
+              title: "Free bet placed",
+              description: `$${stakeNum} on ${pending.label} — covered by the book`,
+            });
+            setPending(null);
+            setUseFreeBet(false);
+            setStake("10");
+          },
+          onError: (e: Error) =>
+            toast({ title: "Couldn't place free bet", description: e.message, variant: "destructive" }),
+        }
+      );
+      return;
+    }
+
     createBet.mutate(
       {
         playerId: player.id,
@@ -141,6 +176,20 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
                 </span>
               </div>
 
+              {pendingFreeBet && (
+                <div className="flex items-start gap-2.5 border border-accent/40 bg-accent/5 rounded-lg p-3">
+                  <Checkbox
+                    id="use-free-bet"
+                    checked={useFreeBet}
+                    onCheckedChange={(v) => setUseFreeBet(v === true)}
+                    data-testid="checkbox-use-free-bet"
+                  />
+                  <Label htmlFor="use-free-bet" className="text-sm leading-snug cursor-pointer">
+                    Use your free ${(pendingFreeBet.amountCents / 100).toFixed(0)} bet — comped, covered by the book.
+                  </Label>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="stake" className="font-label text-[11px] text-muted-foreground">
                   Stake ($)
@@ -150,8 +199,9 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
                   type="number"
                   min={1}
                   step={1}
-                  value={stake}
+                  value={applyingFreeBet ? stakeNum : stake}
                   onChange={(e) => setStake(e.target.value)}
+                  disabled={applyingFreeBet}
                   data-testid="input-stake"
                 />
               </div>
@@ -173,14 +223,16 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
 
               <Button
                 onClick={submit}
-                disabled={createBet.isPending || !player}
+                disabled={createBet.isPending || redeemFreeBet.isPending || !player}
                 className="w-full font-label tracking-wide"
                 data-testid="button-place-bet"
               >
-                {createBet.isPending
+                {createBet.isPending || redeemFreeBet.isPending
                   ? "Placing..."
                   : player
-                    ? `Place bet as ${player.name}`
+                    ? applyingFreeBet
+                      ? `Place free bet as ${player.name}`
+                      : `Place bet as ${player.name}`
                     : "Pick your name first"}
               </Button>
               {!player && (
