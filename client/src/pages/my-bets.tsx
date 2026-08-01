@@ -1,5 +1,5 @@
 import { useApp } from "@/lib/app-context";
-import { usePlayerBets, useVoidBet, useCashOut, useMarketPools } from "@/lib/api";
+import { usePlayerBets, useVoidBet, useCashOut, useMarketPools, useFreeBetGrantsForPlayer } from "@/lib/api";
 import {
   formatMoney,
   formatOdds,
@@ -28,6 +28,12 @@ const statusMeta: Record<
 export default function MyBets() {
   const { player } = useApp();
   const { data: bets, isLoading } = usePlayerBets(player?.id ?? null);
+  const { data: freeBetGrants } = useFreeBetGrantsForPlayer(player?.id ?? null);
+  const freeBetIds = new Set(
+    (freeBetGrants ?? [])
+      .filter((g) => g.status === "used" && g.betId != null)
+      .map((g) => g.betId as number)
+  );
 
   if (!player) {
     return (
@@ -88,7 +94,7 @@ export default function MyBets() {
         ) : (
           <div className="space-y-2">
             {grouped.open.map((b) => (
-              <BetRow key={b.id} bet={b} />
+              <BetRow key={b.id} bet={b} isFreeBet={freeBetIds.has(b.id)} />
             ))}
           </div>
         )}
@@ -112,7 +118,7 @@ export default function MyBets() {
   );
 }
 
-function BetRow({ bet }: { bet: BetWithContext }) {
+function BetRow({ bet, isFreeBet }: { bet: BetWithContext; isFreeBet?: boolean }) {
   const voidBet = useVoidBet();
   const cashOut = useCashOut();
   const { isAdmin, player } = useApp();
@@ -128,13 +134,15 @@ function BetRow({ bet }: { bet: BetWithContext }) {
   const evenWin = won && Math.abs(net) < 0.005;
 
   // Cash-out (refund) is available on the player's own open, non-book bets
-  // before the market's cash-out lock time.
+  // before the market's cash-out lock time. Free bets are excluded — they're
+  // a comp, not the player's own money, and cashing out would leave the
+  // book's matching cover bet dangling with no counterpart.
   const lockMs = bet.market.cashOutLockAt
     ? new Date(bet.market.cashOutLockAt).getTime()
     : NaN;
   const lockFuture = Number.isFinite(lockMs) && Date.now() < lockMs;
   const canCashOut =
-    isOpen && !isBook && !!player && player.id === bet.playerId && lockFuture;
+    isOpen && !isBook && !isFreeBet && !!player && player.id === bet.playerId && lockFuture;
 
   // Live parimutuel estimate for open bets.
   const pool = isOpen ? pools.get(bet.marketId) : undefined;
@@ -155,6 +163,9 @@ function BetRow({ bet }: { bet: BetWithContext }) {
           <span className={`stamp text-[10px] ${meta.className}`}>
             {meta.label}
           </span>
+          {isFreeBet && (
+            <span className="stamp text-[10px] text-accent">Free bet</span>
+          )}
           <span className="font-label text-[11px] text-muted-foreground truncate">
             {bet.market.category}
           </span>

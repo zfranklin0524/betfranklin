@@ -678,6 +678,17 @@ class DatabaseStorage {
     db.delete(freeBetGrants).where(eq(freeBetGrants.id, grantId)).run();
   }
 
+  // Find the grant behind a bet, if any — either side (the player's bet or
+  // the book's cover bet). Used to block generic actions (e.g. cash-out)
+  // that would otherwise void just one side and leave the other dangling.
+  findFreeBetGrantByBetId(betId: number): FreeBetGrant | undefined {
+    return db
+      .select()
+      .from(freeBetGrants)
+      .where(sql`${freeBetGrants.betId} = ${betId} OR ${freeBetGrants.bookBetId} = ${betId}`)
+      .get();
+  }
+
   /* ----- Settlement (right-sized pool) ----- */
   // Grade all open bets on a market using a right-sized pool model.
   //

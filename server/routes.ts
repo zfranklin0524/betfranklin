@@ -159,6 +159,8 @@ export function registerRoutes(_httpServer: any, app: Express) {
       return res.status(403).json({ message: "Not your bet" });
     if (bet.status !== "open")
       return res.status(400).json({ message: "Bet is not open" });
+    if (storage.findFreeBetGrantByBetId(id))
+      return res.status(400).json({ message: "Free bets can't be cashed out" });
     const market = storage.getMarket(bet.marketId);
     if (!market) return res.status(404).json({ message: "Market not found" });
     const lockAt = market.cashOutLockAt
