@@ -24,6 +24,8 @@ import {
   multipleToAmerican,
   formatOdds,
   formatMoney,
+  isEvenMoneyMarket,
+  EVEN_MONEY_LABEL,
 } from "@shared/schema";
 import type { MarketWithOptions } from "@shared/schema";
 
@@ -69,13 +71,17 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
   const stakeNum = applyingFreeBet
     ? (pendingFreeBet!.amountCents / 100)
     : Number(stake) || 0;
+  const evenMoney = pending ? isEvenMoneyMarket(pending.market) : false;
   const mp = pending ? pools.get(pending.market.id) : undefined;
   const pool = mp?.pool ?? 0;
   const moneyOnOption =
     (pending ? mp?.perOption.get(pending.optionId) ?? 0 : 0);
-  // Live estimated payout if this bet were the last one in the pool.
+  // 2-option markets always settle at even money (see gradeMarket); only
+  // genuinely multi-way markets use the shifting parimutuel estimate.
   const estPayout = pending
-    ? parimutuelEstPayout(stakeNum, pool, moneyOnOption)
+    ? evenMoney
+      ? stakeNum * 2
+      : parimutuelEstPayout(stakeNum, pool, moneyOnOption)
     : 0;
   const estProfit = estPayout - stakeNum;
   // Live implied odds for the option right now (before this bet).
@@ -170,9 +176,11 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
                   className="stamp text-primary text-[10px] shrink-0"
                   data-testid="text-slip-odds"
                 >
-                  {liveMultiple
-                    ? `${formatOdds(multipleToAmerican(liveMultiple))} live`
-                    : "first in"}
+                  {evenMoney
+                    ? EVEN_MONEY_LABEL
+                    : liveMultiple
+                      ? `${formatOdds(multipleToAmerican(liveMultiple))} live`
+                      : "first in"}
                 </span>
               </div>
 
@@ -216,8 +224,9 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
                   bold
                 />
                 <p className="text-[11px] leading-snug text-muted-foreground pt-1">
-                  Parimutuel: final payout depends on the pool when betting
-                  closes. Shown number is a live estimate.
+                  {evenMoney
+                    ? "Even money: doubles your stake if it hits. If the two sides aren't balanced when betting closes, the book covers the gap or the excess is refunded."
+                    : "Parimutuel: final payout depends on the pool when betting closes. Shown number is a live estimate."}
                 </p>
               </div>
 

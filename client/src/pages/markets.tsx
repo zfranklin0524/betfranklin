@@ -7,6 +7,8 @@ import {
   multipleToAmerican,
   formatOdds,
   formatMoney,
+  isEvenMoneyMarket,
+  EVEN_MONEY_LABEL,
 } from "@shared/schema";
 import type { MarketWithOptions } from "@shared/schema";
 import { TeamDot } from "@/components/team-badge";
@@ -44,6 +46,7 @@ function MarketCard({
   const { data: players } = usePlayers();
 
   const totalPool = pool?.pool ?? 0;
+  const evenMoney = isEvenMoneyMarket(market);
 
   const teamOf = (label: string) => {
     if (label === "Team Tommy") return "Team Tommy";
@@ -103,7 +106,11 @@ function MarketCard({
             const canBet = market.status === "open";
             const moneyOnOption = pool?.perOption.get(o.id) ?? 0;
             const multiple = parimutuelMultiple(totalPool, moneyOnOption);
-            const liveOdds = multiple ? formatOdds(multipleToAmerican(multiple)) : "—";
+            const liveOdds = evenMoney
+              ? EVEN_MONEY_LABEL
+              : multiple
+                ? formatOdds(multipleToAmerican(multiple))
+                : "—";
             return canBet ? (
               <button
                 key={o.id}

@@ -7,6 +7,8 @@ import {
   parimutuelMultiple,
   multipleToAmerican,
   formatOdds,
+  isEvenMoneyMarket,
+  EVEN_MONEY_LABEL,
   type MarketWithOptions,
   type RoundScore,
 } from "@shared/schema";
@@ -235,6 +237,7 @@ function QuickMarket({
         .sort((a, b) => b.money - a.money)
     : market.options.map((o) => ({ o, money: pool?.perOption.get(o.id) ?? 0 }));
   const needsScroll = sorted.length > 4;
+  const evenMoney = isEvenMoneyMarket(market);
   return (
     <div className="ticket p-4">
       <div className="flex items-center justify-between mb-2">
@@ -258,7 +261,11 @@ function QuickMarket({
       <div className={`space-y-1 ${needsScroll ? "max-h-[200px] overflow-y-auto" : ""}`}>
         {sorted.map(({ o, money }) => {
           const multiple = parimutuelMultiple(totalPool, money);
-          const liveOdds = multiple ? formatOdds(multipleToAmerican(multiple)) : "0";
+          const liveOdds = evenMoney
+            ? EVEN_MONEY_LABEL
+            : multiple
+              ? formatOdds(multipleToAmerican(multiple))
+              : "0";
           return (
             <button
               key={o.id}

@@ -179,6 +179,20 @@ export function parimutuelEstPayout(
   return (stake / newMoney) * newPool;
 }
 
+// Two-option markets (Team Tommy vs. Goon Squad, captain vs. captain, etc.)
+// settle as a straight even-money book: gradeMarket's right-sized pool pays
+// double on the matched portion and refunds any excess if one side
+// outweighs the other, with the commish able to book-fill the gap so it's
+// always full even money. Only genuinely multi-way award markets (every
+// player as an option, e.g. Hopper Award / King of the West) keep the
+// shifting parimutuel display, since a real field-wide payout varies by
+// how much money is on each name. Live odds should reflect what a bet will
+// actually pay, so 2-option markets always show flat even money.
+export function isEvenMoneyMarket(market: { options: unknown[] }): boolean {
+  return market.options.length === 2;
+}
+export const EVEN_MONEY_LABEL = "Even";
+
 /* ---------- Admin PIN (soft server-side gate) ---------- */
 // Shared by client + server. Lives in the client bundle by design (this is
 // a private group app with no real accounts) — the point is to stop casual

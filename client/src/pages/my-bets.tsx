@@ -1,5 +1,5 @@
 import { useApp } from "@/lib/app-context";
-import { usePlayerBets, useVoidBet, useCashOut, useMarketPools, useFreeBetGrantsForPlayer } from "@/lib/api";
+import { usePlayerBets, useVoidBet, useCashOut, useMarketPools, useFreeBetGrantsForPlayer, useMarkets } from "@/lib/api";
 import {
   formatMoney,
   formatOdds,
@@ -7,6 +7,8 @@ import {
   parimutuelMultiple,
   multipleToAmerican,
   parimutuelEstPayout,
+  isEvenMoneyMarket,
+  EVEN_MONEY_LABEL,
   type BetWithContext,
 } from "@shared/schema";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,10 +31,14 @@ export default function MyBets() {
   const { player } = useApp();
   const { data: bets, isLoading } = usePlayerBets(player?.id ?? null);
   const { data: freeBetGrants } = useFreeBetGrantsForPlayer(player?.id ?? null);
+  const { data: markets } = useMarkets();
   const freeBetIds = new Set(
     (freeBetGrants ?? [])
       .filter((g) => g.status === "used" && g.betId != null)
       .map((g) => g.betId as number)
+  );
+  const evenMoneyMarketIds = new Set(
+    (markets ?? []).filter((m) => isEvenMoneyMarket(m)).map((m) => m.id)
   );
 
   if (!player) {
@@ -94,7 +100,7 @@ export default function MyBets() {
         ) : (
           <div className="space-y-2">
             {grouped.open.map((b) => (
-              <BetRow key={b.id} bet={b} isFreeBet={freeBetIds.has(b.id)} />
+              <BetRow key={b.id} bet={b} isFreeBet={freeBetIds.has(b.id)} evenMoney={evenMoneyMarketIds.has(b.marketId)} />
             ))}
           </div>
         )}
@@ -118,7 +124,7 @@ export default function MyBets() {
   );
 }
 
-function BetRow({ bet, isFreeBet }: { bet: BetWithContext; isFreeBet?: boolean }) {
+function BetRow({ bet, isFreeBet, evenMoney }: { bet: BetWithContext; isFreeBet?: boolean; evenMoney?: boolean }) {
   const voidBet = useVoidBet();
   const cashOut = useCashOut();
   const { isAdmin, player } = useApp();
@@ -149,12 +155,16 @@ function BetRow({ bet, isFreeBet }: { bet: BetWithContext; isFreeBet?: boolean }
   const totalPool = pool?.pool ?? 0;
   const moneyOnOption = pool?.perOption.get(bet.optionId) ?? 0;
   const estPayout = isOpen
-    ? parimutuelEstPayout(bet.stake, totalPool, moneyOnOption)
+    ? evenMoney
+      ? bet.stake * 2
+      : parimutuelEstPayout(bet.stake, totalPool, moneyOnOption)
     : bet.payout;
   const liveMultiple = parimutuelMultiple(totalPool, moneyOnOption);
-  const liveOdds = liveMultiple
-    ? formatOdds(multipleToAmerican(liveMultiple))
-    : null;
+  const liveOdds = evenMoney
+    ? EVEN_MONEY_LABEL
+    : liveMultiple
+      ? formatOdds(multipleToAmerican(liveMultiple))
+      : null;
 
   return (
     <div className="ticket p-3 flex items-center gap-3">
@@ -176,7 +186,7 @@ function BetRow({ bet, isFreeBet }: { bet: BetWithContext; isFreeBet?: boolean }
         <p className="text-xs text-muted-foreground truncate">
           Pick: <span className="text-foreground font-medium">{isBook ? "Book fill (even money)" : bet.option.label}</span>{" "}
           {isOpen && liveOdds && (
-            <span className="font-label">({liveOdds} live)</span>
+            <span className="font-label">({evenMoney ? liveOdds : `${liveOdds} live`})</span>
           )}
         </p>
       </div>

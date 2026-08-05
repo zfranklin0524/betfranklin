@@ -50,6 +50,8 @@ import {
   parimutuelMultiple,
   multipleToAmerican,
   formatOdds,
+  isEvenMoneyMarket,
+  EVEN_MONEY_LABEL,
   BOOK_PLAYER_NAME,
   type MarketWithOptions,
   type BetWithContext,
@@ -332,9 +334,11 @@ function MarketAdminCard({
             {market.options.map((o) => {
               const money = pool?.perOption.get(o.id) ?? 0;
               const multiple = parimutuelMultiple(totalPool, money);
-              const liveOdds = multiple
-                ? formatOdds(multipleToAmerican(multiple))
-                : "—";
+              const liveOdds = isEvenMoneyMarket(market)
+                ? EVEN_MONEY_LABEL
+                : multiple
+                  ? formatOdds(multipleToAmerican(multiple))
+                  : "—";
               return (
                 <div key={o.id} className="flex items-center justify-between gap-2 p-2">
                   <span className="text-sm truncate">{o.label}</span>
