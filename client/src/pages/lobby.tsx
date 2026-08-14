@@ -422,6 +422,12 @@ function DayMatchups({ day }: { day: number }) {
   const { data: units } = useScrambleUnits();
   const { data: holeScores } = useHoleScoresByDay(day);
   const { data: teamPoints } = useTeamPoints();
+  // Hooks must run unconditionally on every render (Rules of Hooks) — these
+  // were previously called after the Day 1 early return below, so switching
+  // from Day 2/3 to Day 1 changed the hook count mid-render and crashed the
+  // page (React error #300). Day 1 just doesn't use the results.
+  const { data: matchSummaries } = useMatchSummaries(day);
+  const { data: dayTotals } = useMatchTotals(day);
   const dayUnits = (units ?? []).filter((u) => u.day === day);
   const isDay1 = day === 1;
 
@@ -494,8 +500,6 @@ function DayMatchups({ day }: { day: number }) {
   }
 
   // Days 2-3: 6 two-man matches with live match play scoring
-  const { data: matchSummaries } = useMatchSummaries(day);
-  const { data: dayTotals } = useMatchTotals(day);
   const summaries = matchSummaries ?? [];
   const totals = dayTotals ?? { tommy: 0, goon: 0, halved: 0 };
   const totalHoles = summaries.reduce((s, m) => s + m.holeResults.length, 0);
