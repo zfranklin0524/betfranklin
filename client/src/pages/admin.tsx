@@ -27,6 +27,7 @@ import {
   useScrambleUnits,
   useCreateScrambleUnit,
   useDeleteScrambleUnit,
+  useUpdateScrambleUnit,
   useHoleScores,
   useUpsertHoleScore,
   useCTPHoles,
@@ -1240,6 +1241,7 @@ function UnitsAdmin() {
   const { data: players } = usePlayers();
   const createUnit = useCreateScrambleUnit();
   const deleteUnit = useDeleteScrambleUnit();
+  const updateUnit = useUpdateScrambleUnit();
   const { data: holeScores } = useHoleScores();
   const upsertScore = useUpsertHoleScore();
   const { toast } = useToast();
@@ -1334,6 +1336,40 @@ function UnitsAdmin() {
                   <p className="font-medium text-sm">{u.label} <span className="text-xs text-muted-foreground">({u.team})</span></p>
                   <p className="text-xs text-muted-foreground truncate">{u.members.map((m) => m.name).join(", ")}</p>
                 </div>
+                {day === 1 && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex flex-col items-center">
+                      <span className="text-[9px] text-muted-foreground font-label">Score</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        className="w-14 h-7 text-center bg-muted/40 rounded border-0 focus:ring-1 focus:ring-accent text-xs"
+                        defaultValue={u.totalScore ?? ""}
+                        key={`${u.id}-score-${u.totalScore ?? ""}`}
+                        onBlur={(e) => {
+                          const val = e.target.value === "" ? null : parseInt(e.target.value);
+                          if (val === null || !isNaN(val)) updateUnit.mutate({ id: u.id, totalScore: val });
+                        }}
+                        data-testid={`input-unit-score-${u.id}`}
+                      />
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="text-[9px] text-muted-foreground font-label">Pts</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        className="w-12 h-7 text-center bg-muted/40 rounded border-0 focus:ring-1 focus:ring-accent text-xs"
+                        defaultValue={u.points ?? ""}
+                        key={`${u.id}-pts-${u.points ?? ""}`}
+                        onBlur={(e) => {
+                          const val = e.target.value === "" ? null : parseFloat(e.target.value);
+                          if (val === null || !isNaN(val)) updateUnit.mutate({ id: u.id, points: val });
+                        }}
+                        data-testid={`input-unit-points-${u.id}`}
+                      />
+                    </div>
+                  </div>
+                )}
                 <Button size="sm" variant="ghost" onClick={() => deleteUnit.mutate(u.id)} data-testid={`button-delete-unit-${u.id}`}>
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>

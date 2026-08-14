@@ -367,6 +367,14 @@ export function useDeleteScrambleUnit() {
     onSuccess: () => invalidateAll(),
   });
 }
+// Set a Day 1 group's final gross score / points earned.
+export function useUpdateScrambleUnit() {
+  return useMutation({
+    mutationFn: ({ id, totalScore, points }: { id: number; totalScore?: number | null; points?: number | null }) =>
+      apiRequest("PATCH", `/api/units/${id}`, { totalScore, points }, PIN_HEADERS).then((r) => r.json()),
+    onSuccess: () => invalidateAll(),
+  });
+}
 
 /* ---------- Hole Scores ---------- */
 export function useHoleScores() {

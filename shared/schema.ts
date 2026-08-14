@@ -272,6 +272,12 @@ export const scrambleUnits = sqliteTable("scramble_units", {
   unitType: text("unit_type").notNull(),
   team: text("team").notNull(),
   label: text("label").notNull(),
+  // Day 1 four-man scramble groups only: their final gross score and the
+  // points that group earned toward the team's day total. Separate from the
+  // hole-by-hole hole_scores table (used for Skins) — this is just the
+  // group's own final tally, entered as a whole from the tee sheet.
+  totalScore: integer("total_score"),
+  points: real("points"),
 });
 export type ScrambleUnit = typeof scrambleUnits.$inferSelect;
 

@@ -285,6 +285,19 @@ sqlite.exec(`
   }
 };
 
+// Migrate: add scramble_units.total_score / points — a Day 1 four-man
+// group's final gross score and the points it earned, entered as a whole
+// from the tee sheet (distinct from the hole-by-hole hole_scores table).
+{
+  const unitCols = sqlite.pragma("table_info(scramble_units)") as { name: string }[];
+  if (!unitCols.some((c) => c.name === "total_score")) {
+    sqlite.exec("ALTER TABLE scramble_units ADD COLUMN total_score INTEGER");
+  }
+  if (!unitCols.some((c) => c.name === "points")) {
+    sqlite.exec("ALTER TABLE scramble_units ADD COLUMN points REAL");
+  }
+};
+
 export const db = drizzle(sqlite);
 export { sqlite as rawDb };
 
@@ -956,6 +969,11 @@ class DatabaseStorage {
   }
   deleteScrambleUnit(id: number): void {
     db.delete(scrambleUnits).where(eq(scrambleUnits.id, id)).run();
+  }
+  // Set a Day 1 group's final gross score / points earned (entered as a
+  // whole from the tee sheet, not derived from hole-by-hole hole_scores).
+  updateScrambleUnit(id: number, patch: { totalScore?: number | null; points?: number | null }): ScrambleUnit | undefined {
+    return db.update(scrambleUnits).set(patch).where(eq(scrambleUnits.id, id)).returning().get();
   }
 
   /* ----- Hole Scores ----- */

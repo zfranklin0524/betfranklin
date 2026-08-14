@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { useBetSlip } from "@/lib/bet-slip";
 import { useApp } from "@/lib/app-context";
-import { useMarkets, useStandings, usePlayerBets, useMarketPools, usePlayers, useScrambleUnits, useHoleScoresByDay, useTeamPoints, useMatchSummaries, useMatchTotals, type MarketPool } from "@/lib/api";
+import { useMarkets, useStandings, usePlayerBets, useMarketPools, usePlayers, useScrambleUnits, useTeamPoints, useMatchSummaries, useMatchTotals, type MarketPool } from "@/lib/api";
 import {
   formatMoney,
   parimutuelMultiple,
@@ -420,8 +420,6 @@ function shortName(fullName: string): string {
 
 function DayMatchups({ day }: { day: number }) {
   const { data: units } = useScrambleUnits();
-  const { data: holeScores } = useHoleScoresByDay(day);
-  const { data: teamPoints } = useTeamPoints();
   // Hooks must run unconditionally on every render (Rules of Hooks) — these
   // were previously called after the Day 1 early return below, so switching
   // from Day 2/3 to Day 1 changed the hook count mid-render and crashed the
@@ -431,27 +429,35 @@ function DayMatchups({ day }: { day: number }) {
   const dayUnits = (units ?? []).filter((u) => u.day === day);
   const isDay1 = day === 1;
 
-  // Team points for this day
-  const tommyPts = teamPoints?.find((t) => t.day === day && t.team === "Team Tommy")?.points ?? 0;
-  const goonPts = teamPoints?.find((t) => t.day === day && t.team === "Goon Squad")?.points ?? 0;
-
-  // Compute a scramble unit's total gross score from hole scores
-  const unitScore = (unitId: number | undefined) => {
-    if (!unitId || !holeScores) return null;
-    const scores = holeScores.filter((h) => h.unitId === unitId);
-    if (scores.length === 0) return null;
-    return scores.reduce((s, h) => s + h.grossScore, 0);
-  };
-
   if (isDay1) {
-    // Day 1: 6 groups of 4 (3 from each team), no vs matchups
-    const tommyUnits = dayUnits.filter((u) => u.team === "Team Tommy");
-    const goonUnits = dayUnits.filter((u) => u.team === "Goon Squad");
-    const allGroups = [
-      ...tommyUnits.map(u => ({ ...u, sort: 0 })),
-      ...goonUnits.map(u => ({ ...u, sort: 1 })),
-    ];
-    const groupCount = 6;
+    // Day 1: 3 four-man-group matchups, one per team, paired by matching
+    // label ("Group 1" plays "Group 1", etc.) — each side shows its own
+    // final gross score and the points it earned, entered from the tee sheet.
+    const tommyUnits = [...dayUnits.filter((u) => u.team === "Team Tommy")].sort((a, b) => a.label.localeCompare(b.label));
+    const goonUnits = [...dayUnits.filter((u) => u.team === "Goon Squad")].sort((a, b) => a.label.localeCompare(b.label));
+    const pairCount = Math.max(tommyUnits.length, goonUnits.length, 3);
+    const pairs = Array.from({ length: pairCount }, (_, i) => {
+      const tommy = tommyUnits[i];
+      const goon = tommy ? goonUnits.find((u) => u.label === tommy.label) ?? goonUnits[i] : goonUnits[i];
+      return { tommy, goon };
+    });
+
+    const SidePoints = ({ side, team }: { side?: (typeof tommyUnits)[number]; team: "Team Tommy" | "Goon Squad" }) => (
+      <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <TeamDot team={team} />
+          <span className="text-xs font-medium shrink-0">{side ? side.label : "TBD"}</span>
+          <span className="text-[11px] text-muted-foreground truncate">
+            {side ? side.members.map((m) => shortName(m.name)).join(", ") : ""}
+          </span>
+        </div>
+        <span className="tabular text-xs shrink-0 whitespace-nowrap">
+          {side?.totalScore ?? "—"}
+          <span className="text-muted-foreground"> · </span>
+          <span className="font-semibold">{side?.points ?? "—"} pts</span>
+        </span>
+      </div>
+    );
 
     return (
       <Card data-testid="card-day-matchups">
@@ -462,37 +468,14 @@ function DayMatchups({ day }: { day: number }) {
               6 four-man groups
             </span>
           </div>
-          <div className="space-y-1.5">
-            {/* Day 1 header */}
-            <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-2.5 pb-1 font-label text-[9px] text-muted-foreground">
-              <span>Group</span>
-              <span className="text-right w-10">Score</span>
-              <span className="text-right w-8">Pts</span>
-            </div>
-            {Array.from({ length: groupCount }).map((_, i) => {
-              const group = allGroups[i];
-              const score = unitScore(group?.id);
-              const pts = group?.team === "Team Tommy" ? tommyPts : goonPts;
-              return (
-                <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-2 items-center bg-muted/30 rounded-lg px-2.5 py-1.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <TeamDot team={group ? group.team : (i < 3 ? "Team Tommy" : "Goon Squad")} />
-                    <span className="text-xs font-medium shrink-0">
-                      {group ? group.label : "TBD"}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground truncate flex-1 text-right">
-                      {group ? group.members.map(m => shortName(m.name)).join(", ") : ""}
-                    </span>
-                  </div>
-                  <span className="text-right tabular text-xs w-10 text-muted-foreground">
-                    {score ?? "—"}
-                  </span>
-                  <span className="text-right tabular text-xs w-8 font-medium">
-                    {pts || ""}
-                  </span>
-                </div>
-              );
-            })}
+          <div className="space-y-2">
+            {pairs.map((pair, i) => (
+              <div key={i} className="rounded-lg bg-muted/30 p-2.5 space-y-1.5">
+                <SidePoints side={pair.tommy} team="Team Tommy" />
+                <div className="h-px bg-border" />
+                <SidePoints side={pair.goon} team="Goon Squad" />
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

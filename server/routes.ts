@@ -353,6 +353,14 @@ export function registerRoutes(_httpServer: any, app: Express) {
     res.json({ ok: true });
   });
 
+  // Set a Day 1 group's final gross score / points earned.
+  app.patch("/api/units/:id", requirePin, (req, res) => {
+    const { totalScore, points } = req.body as { totalScore?: number | null; points?: number | null };
+    const unit = storage.updateScrambleUnit(Number(req.params.id), { totalScore, points });
+    if (!unit) return res.status(404).json({ message: "Unit not found" });
+    res.json(unit);
+  });
+
   /* ---------- Hole Scores ---------- */
   app.get("/api/hole-scores", (_req, res) => {
     res.json(storage.listHoleScores());
