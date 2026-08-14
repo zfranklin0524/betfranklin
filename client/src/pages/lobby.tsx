@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { useBetSlip } from "@/lib/bet-slip";
 import { useApp } from "@/lib/app-context";
-import { useMarkets, useStandings, usePlayerBets, useMarketPools, usePlayers, useScores, useScrambleUnits, useHoleScoresByDay, useTeamPoints, useMatchSummaries, useMatchTotals, type MarketPool } from "@/lib/api";
+import { useMarkets, useStandings, usePlayerBets, useMarketPools, usePlayers, useScrambleUnits, useHoleScoresByDay, useTeamPoints, useMatchSummaries, useMatchTotals, type MarketPool } from "@/lib/api";
 import {
   formatMoney,
   parimutuelMultiple,
@@ -10,7 +10,7 @@ import {
   isEvenMoneyMarket,
   EVEN_MONEY_LABEL,
   type MarketWithOptions,
-  type RoundScore,
+  type TeamPoints,
 } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,7 +37,7 @@ export default function Lobby() {
   const { data: myBets } = usePlayerBets(player?.id ?? null);
   const pools = useMarketPools();
   const { data: players } = usePlayers();
-  const { data: scores } = useScores();
+  const { data: teamPoints } = useTeamPoints();
   const [selectedDay, setSelectedDay] = useState<number | null>(() => {
     const now = new Date();
     const m = now.getMonth() + 1; // 0-indexed
@@ -58,7 +58,7 @@ export default function Lobby() {
   return (
     <div className="space-y-6">
       {/* Live tournament scoreboard (team vs team) */}
-      <Scoreboard scores={scores ?? []} selectedDay={selectedDay} onSelectDay={(d) => setSelectedDay((prev) => (prev === d ? null : d))} />
+      <Scoreboard teamPoints={teamPoints ?? []} selectedDay={selectedDay} onSelectDay={(d) => setSelectedDay((prev) => (prev === d ? null : d))} />
 
       {/* Day matchups (only when a day is selected) */}
       {selectedDay !== null && <DayMatchups day={selectedDay} />}
@@ -291,24 +291,27 @@ function QuickMarket({
 
 const ROUNDS = [1, 2, 3];
 
-function Scoreboard({ scores, selectedDay, onSelectDay }: { scores: RoundScore[]; selectedDay: number | null; onSelectDay: (d: number) => void }) {
+function Scoreboard({ teamPoints, selectedDay, onSelectDay }: { teamPoints: TeamPoints[]; selectedDay: number | null; onSelectDay: (d: number) => void }) {
+  // Cumulative Ryder Cup-style points across all 3 days — higher wins (unlike
+  // stroke play). Per-day points are entered via the admin Units/Results tabs
+  // (Day 1 scramble groups, Day 2-3 match play).
   const total = (team: string) =>
-    scores.filter((s) => s.team === team).reduce((sum, s) => sum + s.score, 0);
-  const roundScore = (round: number, team: string) =>
-    scores.find((s) => s.round === round && s.team === team)?.score;
+    teamPoints.filter((t) => t.team === team).reduce((sum, t) => sum + t.points, 0);
+  const dayPoints = (day: number, team: string) =>
+    teamPoints.find((t) => t.day === day && t.team === team)?.points;
 
   const tommyTotal = total("Team Tommy");
   const goonTotal = total("Goon Squad");
-  const tommyRounds = scores.filter((s) => s.team === "Team Tommy").length;
-  const goonRounds = scores.filter((s) => s.team === "Goon Squad").length;
-  const bothPlayed = tommyRounds > 0 && goonRounds > 0;
+  const tommyDays = teamPoints.filter((t) => t.team === "Team Tommy").length;
+  const goonDays = teamPoints.filter((t) => t.team === "Goon Squad").length;
+  const bothPlayed = tommyDays > 0 && goonDays > 0;
 
   let leader: string;
   if (!bothPlayed) leader = "Scores pending";
   else if (tommyTotal === goonTotal) leader = "All square";
-  else if (tommyTotal < goonTotal)
-    leader = `Team Tommy leads by ${goonTotal - tommyTotal}`;
-  else leader = `Goon Squad leads by ${tommyTotal - goonTotal}`;
+  else if (tommyTotal > goonTotal)
+    leader = `Team Tommy leads by ${tommyTotal - goonTotal}`;
+  else leader = `Goon Squad leads by ${goonTotal - tommyTotal}`;
 
   return (
     <section
@@ -356,11 +359,11 @@ function Scoreboard({ scores, selectedDay, onSelectDay }: { scores: RoundScore[]
               </p>
               <p className="font-display text-sm sm:text-base tabular leading-tight">
                 <span className="text-team-tommy">
-                  {roundScore(r, "Team Tommy") ?? "0"}
+                  {dayPoints(r, "Team Tommy") ?? "0"}
                 </span>
                 <span className="text-muted-foreground mx-1">·</span>
                 <span className="text-team-goon">
-                  {roundScore(r, "Goon Squad") ?? "0"}
+                  {dayPoints(r, "Goon Squad") ?? "0"}
                 </span>
               </p>
               <p className="font-label text-[9px] text-accent mt-0.5">
