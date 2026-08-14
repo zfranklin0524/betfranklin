@@ -241,7 +241,9 @@ export const BUY_IN_CENTS = 10000;
 export const TEAM_POT_PER_PLAYER = 6000;
 export const CTP_POT_PER_PLAYER = 1000;
 export const SKINS_POT_PER_PLAYER = 3000;
-export const SKINS_DAILY_POT = 24000;
+// Skins runs Friday + Saturday only (not the Thursday scramble day). The
+// full $720 collected is split across those 2 days: $360/day.
+export const SKINS_DAILY_POT = 36000;
 export const CTP_PAYOUT_PER_HOLE = 6000;
 export const TEAM_POT_PAYOUT = 144000;
 export const TEAM_POT_PER_WINNER = 12000;

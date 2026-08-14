@@ -384,9 +384,10 @@ export function registerRoutes(_httpServer: any, app: Express) {
   /* ---------- Skins ---------- */
   app.get("/api/skins/day/:day", (req, res) => {
     const day = Number(req.params.day);
-    // Check for rollover from previous days
+    // Check for rollover from previous skins days (Fri-Sat only — Thursday
+    // isn't a skins day).
     let rollover = 0;
-    for (let d = 1; d < day; d++) {
+    for (let d = 2; d < day; d++) {
       const result = storage.getSkinsDayResult(d, rollover);
       if (result.zeroSkins) {
         rollover = result.potCents;

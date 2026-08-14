@@ -1252,13 +1252,14 @@ class DatabaseStorage {
         amountCents: cents,
       }));
     } else {
-      // Calculate projected skins across all 3 days with rollover
+      // Calculate projected skins across Fri-Sat (days 2-3) with rollover.
+      // Thursday (day 1) isn't a skins day.
       let rollover = 0;
       let anyScores = false;
       const playerMap = new Map(this.listPlayers().map((p) => [p.id, p]));
       const byPlayer = new Map<number, number>();
       let day3ZeroSkins = false;
-      for (let day = 1; day <= 3; day++) {
+      for (let day = 2; day <= 3; day++) {
         const result = this.getSkinsDayResult(day, rollover);
         if (result.skins.length > 0 || result.zeroSkins) anyScores = true;
         if (result.zeroSkins) {
@@ -1295,7 +1296,7 @@ class DatabaseStorage {
       totalCents: 72000,
       funded,
       status,
-      description: "$240/day, field-wide. Skin = exactly one team has strict lowest gross score. Zero-skin day rolls $240 into next day.",
+      description: "$360/day (Fri-Sat only), field-wide. Skin = exactly one team has strict lowest gross score. Zero-skin day rolls $360 into next day.",
       payouts,
     };
   }
@@ -1325,7 +1326,7 @@ class DatabaseStorage {
   finalizeSkins(): void {
     if (this.hasLedgerEntries("skins")) return;
     let rollover = 0;
-    for (let day = 1; day <= 3; day++) {
+    for (let day = 2; day <= 3; day++) {
       const result = this.getSkinsDayResult(day, rollover);
       if (result.zeroSkins) {
         rollover = result.potCents;

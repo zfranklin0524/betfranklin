@@ -1182,7 +1182,7 @@ function PotsAdmin() {
                 <h3 className="font-display text-sm">Skins</h3>
                 <StatusPill status={skinsPot.status} />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">{formatMoney(skinsPot.totalCents / 100)} total · $240/day</p>
+              <p className="text-xs text-muted-foreground mt-1">{formatMoney(skinsPot.totalCents / 100)} total · $360/day, Fri-Sat</p>
             </div>
             {skinsPot.status === "scoring" && (
               <Button size="sm" variant="outline" onClick={() => finalizeSkins.mutate()} data-testid="button-admin-finalize-skins">

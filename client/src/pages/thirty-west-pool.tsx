@@ -332,7 +332,7 @@ function SkinsLeaderboard({ pot, isAdmin, onFinalize }: {
             <Layers className="w-5 h-5 text-accent" />
             <div>
               <h2 className="font-display text-base leading-tight">Skins</h2>
-              <p className="text-xs text-muted-foreground">{formatMoney(pot.totalCents / 100)} · $240/day x 3 days</p>
+              <p className="text-xs text-muted-foreground">{formatMoney(pot.totalCents / 100)} · $360/day, Fri-Sat</p>
             </div>
           </div>
           <StatusBadge status={pot.status} />
@@ -377,15 +377,15 @@ function SkinsLeaderboard({ pot, isAdmin, onFinalize }: {
 }
 
 function SkinsDayBreakdown({ pot }: { pot: PotSummary }) {
-  const day1 = useSkinsDayResult(1);
+  // Skins runs Friday + Saturday only — Thursday's 4-man scramble isn't a
+  // skins day.
   const day2 = useSkinsDayResult(2);
   const day3 = useSkinsDayResult(3);
   const unitsQuery = useScrambleUnits();
-  const results = [day1, day2, day3];
+  const results = [day2, day3];
   const dayMeta = [
-    { day: 1, label: "Day 1 (Thu)", format: "6 four-man teams", potCents: 24000 },
-    { day: 2, label: "Day 2 (Fri)", format: "12 two-man teams", potCents: 24000 },
-    { day: 3, label: "Day 3 (Sat)", format: "12 two-man teams", potCents: 24000 },
+    { day: 2, label: "Day 2 (Fri)", format: "12 two-man teams", potCents: 36000 },
+    { day: 3, label: "Day 3 (Sat)", format: "12 two-man teams", potCents: 36000 },
   ];
 
   return (
