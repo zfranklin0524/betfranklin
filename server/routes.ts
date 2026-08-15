@@ -97,7 +97,7 @@ export function registerRoutes(_httpServer: any, app: Express) {
     for (const b of marketBets) {
       storage.voidBet(b.id);
     }
-    storage.updateMarket(id, { status: "closed", winnerOptionIds: [] });
+    storage.updateMarket(id, { status: "closed", winnerOptionIds: null });
     res.json({ ok: true, voidedBets: marketBets.length });
   });
 
