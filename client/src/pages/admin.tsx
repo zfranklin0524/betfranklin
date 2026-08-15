@@ -23,7 +23,9 @@ import {
   useFundPots,
   useFinalizeTeamPot,
   useFinalizeSkins,
-  useManualSkinsPayout,
+  useSkinsHoleWins,
+  useRecordSkinsHoleWin,
+  useRemoveSkinsHoleWin,
   useScrambleUnits,
   useCreateScrambleUnit,
   useDeleteScrambleUnit,
@@ -1552,17 +1554,11 @@ function ResultsAdmin() {
   const { data: players } = usePlayers();
   const { data: units } = useScrambleUnits();
   const { data: ctpHoles } = useCTPHoles();
-  const skinsPayout = useManualSkinsPayout();
   const addEntry = useAddCTPEntry();
   const setWinners = useSetCTPWinners();
   const createHole = useCreateCTPHole();
   const { toast } = useToast();
 
-  const [skinsWinners, setSkinsWinners] = useState<Record<number, { playerId: string; amount: string }>>({
-    1: { playerId: "", amount: "" },
-    2: { playerId: "", amount: "" },
-    3: { playerId: "", amount: "" },
-  });
   const [ctpWinners, setCtpWinners] = useState<Record<number, string>>({});
 
   useEffect(() => {
@@ -1588,69 +1584,12 @@ function ResultsAdmin() {
           Skins Winners & Payouts
         </h2>
         <p className="text-xs text-muted-foreground mb-3">
-          Select the winning player and enter the payout amount (in dollars). Each day's pot is $240.
+          Fri + Sat only, $360/day. Enter each hole's skin as you hear about it — 1 or 2 winners split the payout evenly.
         </p>
         <div className="space-y-3">
-          {[1, 2, 3].map((day) => {
-            const dayUnits = unitList.filter((u) => u.day === day);
-            const dayPlayers = dayUnits.length > 0
-              ? dayUnits.flatMap((u) => u.members)
-              : playerList;
-            return (
-              <Card key={day}>
-                <CardContent className="p-3 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="font-label text-xs">Day {day}</Badge>
-                    <span className="text-xs text-muted-foreground">Pot: $240</span>
-                  </div>
-                  <div className="flex gap-2 items-end">
-                    <div className="flex-1">
-                      <Label className="text-[11px] text-muted-foreground">Winner</Label>
-                      <Select
-                        value={skinsWinners[day]?.playerId ?? ""}
-                        onValueChange={(v) => setSkinsWinners((p) => ({ ...p, [day]: { ...p[day], playerId: v } }))}
-                      >
-                        <SelectTrigger className="h-9"><SelectValue placeholder="Pick player..." /></SelectTrigger>
-                        <SelectContent>
-                          {dayPlayers.map((p) => (
-                            <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="w-24">
-                      <Label className="text-[11px] text-muted-foreground">Payout $</Label>
-                      <Input
-                        type="number"
-                        placeholder="0"
-                        value={skinsWinners[day]?.amount ?? ""}
-                        onChange={(e) => setSkinsWinners((p) => ({ ...p, [day]: { ...p[day], amount: e.target.value } }))}
-                        className="h-9"
-                        data-testid={`input-skins-amount-day${day}`}
-                      />
-                    </div>
-                    <Button
-                      size="sm"
-                      disabled={!skinsWinners[day]?.playerId || !skinsWinners[day]?.amount || skinsPayout.isPending}
-                      onClick={() => {
-                        const { playerId, amount } = skinsWinners[day];
-                        skinsPayout.mutate({
-                          day,
-                          playerId: Number(playerId),
-                          amountCents: Math.round(Number(amount) * 100),
-                          description: `Day ${day} skins winner`,
-                        });
-                        toast({ title: `Day ${day} skins payout saved` });
-                      }}
-                      data-testid={`button-save-skins-day${day}`}
-                    >
-                      Save
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          {[2, 3].map((day) => (
+            <SkinsDayEntry key={day} day={day} playerList={playerList} unitList={unitList} />
+          ))}
         </div>
       </div>
 
@@ -1724,6 +1663,133 @@ function ResultsAdmin() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------- Skins entry for one day (Fri or Sat) ---------- */
+function SkinsDayEntry({
+  day,
+  playerList,
+  unitList,
+}: {
+  day: number;
+  playerList: { id: number; name: string }[];
+  unitList: ScrambleUnitWithMembers[];
+}) {
+  const { data: holeWins } = useSkinsHoleWins(day);
+  const record = useRecordSkinsHoleWin();
+  const remove = useRemoveSkinsHoleWin();
+  const { toast } = useToast();
+
+  const dayUnits = unitList.filter((u) => u.day === day);
+  const dayPlayers = dayUnits.length > 0 ? dayUnits.flatMap((u) => u.members) : playerList;
+
+  const [hole, setHole] = useState("");
+  const [player1, setPlayer1] = useState("");
+  const [player2, setPlayer2] = useState("");
+  const [amount, setAmount] = useState("90");
+
+  const winnerCount = player2 ? 2 : player1 ? 1 : 0;
+  const perWinner = winnerCount > 0 ? Math.floor((Number(amount) || 0) / winnerCount) : 0;
+
+  const submit = () => {
+    const holeNum = Number(hole);
+    const totalCents = Math.round(Number(amount) * 100);
+    if (!holeNum || !player1 || !totalCents) return;
+    const ids = [player1, ...(player2 ? [player2] : [])].map(Number);
+    const share = Math.floor(totalCents / ids.length);
+    const winners = ids.map((playerId, i) => ({
+      playerId,
+      // absorb rounding remainder into the first winner
+      amountCents: i === 0 ? totalCents - share * (ids.length - 1) : share,
+    }));
+    record.mutate(
+      { day, holeNumber: holeNum, winners },
+      {
+        onSuccess: () => {
+          toast({ title: `Hole ${holeNum} skin saved — $${amount} split ${ids.length === 2 ? "2 ways" : "to 1 winner"}` });
+          setHole("");
+          setPlayer1("");
+          setPlayer2("");
+          setAmount("90");
+        },
+      }
+    );
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-3 space-y-3">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="font-label text-xs">Day {day} ({day === 2 ? "Fri" : "Sat"})</Badge>
+          <span className="text-xs text-muted-foreground">Pot: $360</span>
+        </div>
+
+        {(holeWins ?? []).length > 0 && (
+          <ol className="space-y-1">
+            {(holeWins ?? []).map((hw) => (
+              <li key={hw.holeNumber} className="flex items-center justify-between gap-2 text-xs bg-muted/40 rounded-md px-2 py-1.5">
+                <span>
+                  <span className="font-medium">Hole {hw.holeNumber}:</span>{" "}
+                  {hw.winners.map((w) => `${w.playerName} (${formatMoney(w.amountCents / 100)})`).join(" + ")}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-muted-foreground"
+                  onClick={() => remove.mutate({ day, holeNumber: hw.holeNumber })}
+                  data-testid={`button-remove-skins-day${day}-hole${hw.holeNumber}`}
+                >
+                  <Trash2 className="w-3 h-3" />
+                </Button>
+              </li>
+            ))}
+          </ol>
+        )}
+
+        <div className="flex gap-2 items-end flex-wrap">
+          <div className="w-16">
+            <Label className="text-[11px] text-muted-foreground">Hole</Label>
+            <Input type="number" placeholder="#" value={hole} onChange={(e) => setHole(e.target.value)} className="h-9" data-testid={`input-skins-hole-day${day}`} />
+          </div>
+          <div className="flex-1 min-w-[140px]">
+            <Label className="text-[11px] text-muted-foreground">Winner</Label>
+            <Select value={player1} onValueChange={setPlayer1}>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Pick player..." /></SelectTrigger>
+              <SelectContent>
+                {dayPlayers.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex-1 min-w-[140px]">
+            <Label className="text-[11px] text-muted-foreground">2nd winner (optional)</Label>
+            <Select value={player2} onValueChange={(v) => setPlayer2(v === "none" ? "" : v)}>
+              <SelectTrigger className="h-9"><SelectValue placeholder="None" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {dayPlayers.filter((p) => String(p.id) !== player1).map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-24">
+            <Label className="text-[11px] text-muted-foreground">Total $</Label>
+            <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-9" data-testid={`input-skins-amount-day${day}`} />
+          </div>
+          <Button size="sm" disabled={!hole || !player1 || !amount || record.isPending} onClick={submit} data-testid={`button-save-skins-day${day}`}>
+            Save
+          </Button>
+        </div>
+        {winnerCount > 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            ${perWinner} {winnerCount === 2 ? "each" : "to winner"}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

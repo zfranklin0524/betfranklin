@@ -1233,13 +1233,65 @@ class DatabaseStorage {
     };
   }
 
+  // Skins are entered manually per hole (day*100+holeNumber as the ledger
+  // sourceId), not computed from hole_scores. Re-callable per hole: replaces
+  // any prior entry for that exact day+hole so a hole can be corrected
+  // without touching other holes.
+  recordSkinsHoleWin(day: number, holeNumber: number, winners: { playerId: number; amountCents: number }[]): void {
+    const sourceId = day * 100 + holeNumber;
+    this.deleteLedgerBySource("skins", sourceId);
+    const playerMap = new Map(this.listPlayers().map((p) => [p.id, p]));
+    for (const w of winners) {
+      const name = playerMap.get(w.playerId)?.name ?? "Unknown";
+      this.addLedgerEntry(w.playerId, "skins", w.amountCents, `Skins — Day ${day}, Hole ${holeNumber} (${name})`, sourceId);
+    }
+  }
+  removeSkinsHoleWin(day: number, holeNumber: number): void {
+    this.deleteLedgerBySource("skins", day * 100 + holeNumber);
+  }
+  // List recorded skin holes for a day, grouped by hole.
+  listSkinsHoleWins(day: number): { holeNumber: number; winners: { playerId: number; playerName: string; amountCents: number }[] }[] {
+    const lo = day * 100, hi = day * 100 + 99;
+    const entries = db
+      .select()
+      .from(ledgerEntries)
+      .where(sql`${ledgerEntries.sourceType} = 'skins' AND ${ledgerEntries.sourceId} >= ${lo} AND ${ledgerEntries.sourceId} <= ${hi}`)
+      .orderBy(ledgerEntries.sourceId)
+      .all() as { playerId: number; sourceId: number | null; amountCents: number }[];
+    const playerMap = new Map(this.listPlayers().map((p) => [p.id, p]));
+    const byHole = new Map<number, { playerId: number; playerName: string; amountCents: number }[]>();
+    for (const e of entries) {
+      if (e.sourceId == null) continue;
+      const hole = e.sourceId - day * 100;
+      const list = byHole.get(hole) ?? [];
+      list.push({ playerId: e.playerId, playerName: playerMap.get(e.playerId)?.name ?? "Unknown", amountCents: e.amountCents });
+      byHole.set(hole, list);
+    }
+    return Array.from(byHole.entries())
+      .map(([holeNumber, winners]) => ({ holeNumber, winners }))
+      .sort((a, b) => a.holeNumber - b.holeNumber);
+  }
+  // A day counts as recorded once at least one skins hole has been entered
+  // for it (manually, via recordSkinsHoleWin).
+  hasSkinsForDay(day: number): boolean {
+    const lo = day * 100, hi = day * 100 + 99;
+    const r = sqlite
+      .prepare("SELECT count(*) as c FROM ledger_entries WHERE source_type = 'skins' AND source_id >= ? AND source_id <= ?")
+      .get(lo, hi) as { c: number } | undefined;
+    return (r?.c ?? 0) > 0;
+  }
+
   getSkinsPotSummary(): PotSummary {
     const funded = this.isFunded();
-    const finalized = this.hasLedgerEntries("skins");
+    // Finalized only once both skins days (Fri + Sat) have been recorded —
+    // a single day's entries shouldn't make the whole $720 pot look done.
+    const day2Done = this.hasSkinsForDay(2);
+    const day3Done = this.hasSkinsForDay(3);
+    const finalized = day2Done && day3Done;
     let status: PotSummary["status"];
     let payouts: PotPayout[] = [];
-    if (finalized) {
-      status = "finalized";
+    if (day2Done || day3Done) {
+      status = finalized ? "finalized" : "scoring";
       const entries = db.select().from(ledgerEntries).where(sql`${ledgerEntries.sourceType} = 'skins'`).all();
       const playerMap = new Map(this.listPlayers().map((p) => [p.id, p]));
       const byPlayer = new Map<number, number>();

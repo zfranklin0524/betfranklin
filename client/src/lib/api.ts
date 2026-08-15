@@ -118,6 +118,7 @@ function invalidateAll() {
   queryClient.invalidateQueries({ queryKey: QK.sideBets });
   queryClient.invalidateQueries({ queryKey: QK.freeBetGrants });
   queryClient.invalidateQueries({ queryKey: ["/api/free-bets/player"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/skins/hole-wins"] });
 }
 
 export function useCreatePlayer() {
@@ -341,11 +342,23 @@ export function useLedger() {
   return useQuery<LedgerEntry[]>({ queryKey: QK.ledger });
 }
 
-/* ---------- Manual Skins Payout ---------- */
-export function useManualSkinsPayout() {
+/* ---------- Manual Skins Entry (per hole, 1-2 winners split the payout) ---------- */
+export function useSkinsHoleWins(day: number) {
+  return useQuery<{ holeNumber: number; winners: { playerId: number; playerName: string; amountCents: number }[] }[]>({
+    queryKey: ["/api/skins/hole-wins", day],
+  });
+}
+export function useRecordSkinsHoleWin() {
   return useMutation({
-    mutationFn: (data: { day: number; playerId: number; amountCents: number; description?: string }) =>
-      apiRequest("POST", "/api/skins/manual-payout", data, PIN_HEADERS).then((r) => r.json()),
+    mutationFn: (data: { day: number; holeNumber: number; winners: { playerId: number; amountCents: number }[] }) =>
+      apiRequest("POST", "/api/skins/hole-win", data, PIN_HEADERS).then((r) => r.json()),
+    onSuccess: () => invalidateAll(),
+  });
+}
+export function useRemoveSkinsHoleWin() {
+  return useMutation({
+    mutationFn: ({ day, holeNumber }: { day: number; holeNumber: number }) =>
+      apiRequest("DELETE", `/api/skins/hole-win/${day}/${holeNumber}`, undefined, PIN_HEADERS).then((r) => r.json()),
     onSuccess: () => invalidateAll(),
   });
 }

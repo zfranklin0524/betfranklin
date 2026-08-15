@@ -398,14 +398,27 @@ export function registerRoutes(_httpServer: any, app: Express) {
     res.json(storage.getSkinsDayResult(day, rollover));
   });
 
-  // Manual skins payout — admin picks winner + amount per day
-  app.post("/api/skins/manual-payout", requirePin, (req, res) => {
-    const { day, playerId, amountCents, description } = req.body;
-    if (!playerId || !amountCents) {
-      return res.status(400).json({ message: "Missing playerId or amountCents" });
-    }
-    storage.deleteLedgerBySource("skins_manual", day);
-    storage.addLedgerEntry(playerId, "skins_manual", amountCents, description || `Day ${day} skins payout`, day);
+  // Manual skins entry — admin records who won a given hole's skin (1-2
+  // players splitting the payout) for a day. Re-callable per hole: replaces
+  // any prior entry for that exact day+hole without touching other holes.
+  const skinsHoleWinSchema = z.object({
+    day: z.number(),
+    holeNumber: z.number(),
+    winners: z.array(z.object({ playerId: z.number(), amountCents: z.number().positive() })).min(1),
+  });
+  app.post("/api/skins/hole-win", requirePin, (req, res) => {
+    const parsed = skinsHoleWinSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Invalid skins entry" });
+    storage.recordSkinsHoleWin(parsed.data.day, parsed.data.holeNumber, parsed.data.winners);
+    res.json({ ok: true });
+  });
+
+  app.get("/api/skins/hole-wins/:day", (req, res) => {
+    res.json(storage.listSkinsHoleWins(Number(req.params.day)));
+  });
+
+  app.delete("/api/skins/hole-win/:day/:hole", requirePin, (req, res) => {
+    storage.removeSkinsHoleWin(Number(req.params.day), Number(req.params.hole));
     res.json({ ok: true });
   });
 
