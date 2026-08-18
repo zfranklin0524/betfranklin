@@ -851,25 +851,25 @@ class DatabaseStorage {
           net += betNet(b);
         }
         const myLedger = ledger.filter((e) => e.playerId === player.id);
-        // Split buy_in into component pots: $60 team, $10 CTP, $30 skins
-        const teamPotNet = myLedger
-          .filter((e) => e.sourceType === "team_pot" || e.sourceType === "buy_in")
-          .reduce((s, e) => {
-            if (e.sourceType === "buy_in") return s - TEAM_POT_PER_PLAYER;
-            return s + e.amountCents;
-          }, 0) / 100;
-        const ctpNet = myLedger
-          .filter((e) => e.sourceType === "ctp" || e.sourceType === "buy_in")
-          .reduce((s, e) => {
-            if (e.sourceType === "buy_in") return s - CTP_POT_PER_PLAYER;
-            return s + e.amountCents;
-          }, 0) / 100;
-        const skinsNet = myLedger
-          .filter((e) => e.sourceType === "skins" || e.sourceType === "buy_in")
-          .reduce((s, e) => {
-            if (e.sourceType === "buy_in") return s - SKINS_POT_PER_PLAYER;
-            return s + e.amountCents;
-          }, 0) / 100;
+        // Split whatever they actually paid across the 3 pots, proportional
+        // to the standard $60/$10/$30 ratio — a partial (or $0) buy-in
+        // correction flows through correctly instead of every player being
+        // assumed to have paid the full $100.
+        const buyInEntry = myLedger.find((e) => e.sourceType === "buy_in");
+        const actualBuyIn = buyInEntry ? -buyInEntry.amountCents : 0;
+        const buyInRatio = actualBuyIn / BUY_IN_CENTS;
+        const teamPotDebit = Math.round(TEAM_POT_PER_PLAYER * buyInRatio);
+        const ctpDebit = Math.round(CTP_POT_PER_PLAYER * buyInRatio);
+        const skinsDebit = Math.round(SKINS_POT_PER_PLAYER * buyInRatio);
+        const teamPotNet = (myLedger
+          .filter((e) => e.sourceType === "team_pot")
+          .reduce((s, e) => s + e.amountCents, 0) - teamPotDebit) / 100;
+        const ctpNet = (myLedger
+          .filter((e) => e.sourceType === "ctp")
+          .reduce((s, e) => s + e.amountCents, 0) - ctpDebit) / 100;
+        const skinsNet = (myLedger
+          .filter((e) => e.sourceType === "skins")
+          .reduce((s, e) => s + e.amountCents, 0) - skinsDebit) / 100;
         // potNet backs the 30W Pool page ("Excludes betFranklin props") — it
         // must exclude both side_bet and free_bet (a sportsbook prop-betting
         // comp, unrelated to the buy-in pots) or the pool totals won't
@@ -924,6 +924,24 @@ class DatabaseStorage {
         // Buy-in debits: $60 team pot, $10 CTP, $30 skins
         db.insert(ledgerEntries).values({ playerId: p.id, sourceType: "buy_in", sourceId: null, amountCents: -(TEAM_POT_PER_PLAYER + CTP_POT_PER_PLAYER + SKINS_POT_PER_PLAYER), description: "$100 buy-in (Team Pot $60 + CTP $10 + Skins $30)" }).run();
       }
+    }
+  }
+  // Correct one player's actual buy-in (partial or $0 payments happen).
+  // Replaces their buy_ins row and buy_in ledger entry to match reality —
+  // teamPotNet/ctpNet/skinsNet split whatever they actually paid
+  // proportionally (60/10/30), so a partial payment shows up correctly
+  // across all three pots instead of assuming the full $100.
+  updateBuyIn(playerId: number, amountCents: number): void {
+    const existing = db.select().from(buyIns).where(eq(buyIns.playerId, playerId)).get();
+    if (existing) {
+      db.update(buyIns).set({ amountCents, paid: amountCents > 0 }).where(eq(buyIns.playerId, playerId)).run();
+    } else {
+      db.insert(buyIns).values({ playerId, amountCents, paid: amountCents > 0 }).run();
+    }
+    sqlite.prepare("DELETE FROM ledger_entries WHERE player_id = ? AND source_type = 'buy_in'").run(playerId);
+    if (amountCents > 0) {
+      const dollars = amountCents / 100;
+      this.addLedgerEntry(playerId, "buy_in", -amountCents, `$${dollars} buy-in (of $100)`);
     }
   }
   isFunded(): boolean {

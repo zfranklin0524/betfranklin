@@ -313,6 +313,20 @@ export function registerRoutes(_httpServer: any, app: Express) {
     res.json({ ok: true });
   });
 
+  app.get("/api/buy-ins", (_req, res) => {
+    res.json(storage.listBuyIns());
+  });
+
+  // Correct one player's actual buy-in (partial or $0 payments happen).
+  app.patch("/api/buy-ins/:playerId", requirePin, (req, res) => {
+    const { amountCents } = req.body as { amountCents?: number };
+    if (typeof amountCents !== "number" || amountCents < 0) {
+      return res.status(400).json({ message: "amountCents must be a non-negative number" });
+    }
+    storage.updateBuyIn(Number(req.params.playerId), amountCents);
+    res.json({ ok: true });
+  });
+
   app.post("/api/pots/finalize-team", requirePin, (_req, res) => {
     storage.finalizeTeamPot();
     res.json({ ok: true });

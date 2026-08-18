@@ -21,6 +21,8 @@ import {
   useSetScore,
   usePots,
   useFundPots,
+  useBuyIns,
+  useUpdateBuyIn,
   useFinalizeTeamPot,
   useFinalizeSkins,
   useSkinsHoleWins,
@@ -1086,10 +1088,13 @@ function ScoresAdmin() {
 function PotsAdmin() {
   const { data: pots } = usePots();
   const { data: teamPoints } = useTeamPoints();
+  const { data: players } = usePlayers();
+  const { data: buyIns } = useBuyIns();
   const fundPots = useFundPots();
   const finalizeTeam = useFinalizeTeamPot();
   const finalizeSkins = useFinalizeSkins();
   const upsertPoints = useUpsertTeamPoints();
+  const updateBuyIn = useUpdateBuyIn();
   const { toast } = useToast();
 
   const teamPot = pots?.find((p) => p.type === "team_pot");
@@ -1129,6 +1134,50 @@ function PotsAdmin() {
         <div className="text-sm text-win flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4" /> Pots funded — $2,400 collected
         </div>
+      )}
+
+      {funded && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div>
+              <h3 className="font-display text-sm">Buy-Ins (correct for partial/missing payments)</h3>
+              <p className="text-xs text-muted-foreground">
+                Fund assumed everyone paid $100. If someone paid less (or nothing), correct it here — it splits proportionally across Team/CTP/Skins.
+              </p>
+            </div>
+            <div className="space-y-1">
+              {(players ?? []).map((p) => {
+                const bi = (buyIns ?? []).find((b) => b.playerId === p.id);
+                const amount = bi ? bi.amountCents / 100 : 100;
+                return (
+                  <div key={p.id} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="truncate">{p.name}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-muted-foreground">$</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        className="w-20 h-8"
+                        defaultValue={amount}
+                        key={`${p.id}-${amount}`}
+                        onBlur={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (isNaN(val) || val < 0) return;
+                          if (val === amount) return;
+                          updateBuyIn.mutate(
+                            { playerId: p.id, amountCents: Math.round(val * 100) },
+                            { onSuccess: () => toast({ title: `${p.name}: $${val} buy-in saved` }) }
+                          );
+                        }}
+                        data-testid={`input-buyin-${p.id}`}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <Card>

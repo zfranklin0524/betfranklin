@@ -20,6 +20,7 @@ import type {
   MatchSummary,
   MatchScoreEntry,
   FreeBetGrantWithContext,
+  BuyIn,
 } from "@shared/schema";
 import { ADMIN_PIN } from "@shared/schema";
 
@@ -110,6 +111,7 @@ function invalidateAll() {
   queryClient.invalidateQueries({ queryKey: QK.players });
   queryClient.invalidateQueries({ queryKey: QK.scores });
   queryClient.invalidateQueries({ queryKey: QK.pots });
+  queryClient.invalidateQueries({ queryKey: ["/api/buy-ins"] });
   queryClient.invalidateQueries({ queryKey: QK.ledger });
   queryClient.invalidateQueries({ queryKey: QK.units });
   queryClient.invalidateQueries({ queryKey: QK.holeScores });
@@ -321,6 +323,17 @@ export function usePots() {
 export function useFundPots() {
   return useMutation({
     mutationFn: () => apiRequest("POST", "/api/pots/fund", undefined, PIN_HEADERS).then((r) => r.json()),
+    onSuccess: () => invalidateAll(),
+  });
+}
+export function useBuyIns() {
+  return useQuery<BuyIn[]>({ queryKey: ["/api/buy-ins"] });
+}
+// Correct one player's actual buy-in (partial or $0 payments happen).
+export function useUpdateBuyIn() {
+  return useMutation({
+    mutationFn: ({ playerId, amountCents }: { playerId: number; amountCents: number }) =>
+      apiRequest("PATCH", `/api/buy-ins/${playerId}`, { amountCents }, PIN_HEADERS).then((r) => r.json()),
     onSuccess: () => invalidateAll(),
   });
 }
