@@ -118,7 +118,7 @@ export default function ThirtyWestPool() {
 
       {/* Running Pool Ledger */}
       {standings && (
-        <PoolLedger standings={standings} funded={funded} />
+        <PoolLedger standings={standings} funded={funded} pots={[teamPot, ctpPot, skinsPot]} />
       )}
     </div>
   );
@@ -525,7 +525,7 @@ function SkinsDayRow({ label, format, potCents, data, hasData, isFinalized, unit
 }
 
 /* ---------- Running Pool Ledger ---------- */
-function PoolLedger({ standings, funded }: { standings: PlayerStanding[]; funded: boolean }) {
+function PoolLedger({ standings, funded, pots }: { standings: PlayerStanding[]; funded: boolean; pots: (PotSummary | undefined)[] }) {
   const poolData = standings
     .map((s) => ({
       player: s.player,
@@ -540,7 +540,13 @@ function PoolLedger({ standings, funded }: { standings: PlayerStanding[]; funded
   const totalTeam = poolData.reduce((s, p) => s + p.teamPotNet, 0);
   const totalCTP = poolData.reduce((s, p) => s + p.ctpNet, 0);
   const totalSkins = poolData.reduce((s, p) => s + p.skinsNet, 0);
-  const unallocated = funded ? -2400 - totalPool : 0;
+  // Money still sitting in the $2,400 collected that hasn't been through a
+  // real finalization yet — each pot's full fixed amount only counts once
+  // its status is actually "finalized" (not just a live projection).
+  const finalizedCents = pots
+    .filter((p): p is PotSummary => !!p && p.status === "finalized")
+    .reduce((s, p) => s + p.totalCents, 0);
+  const unallocated = funded ? 2400 - finalizedCents / 100 : 0;
 
   const fmt = (n: number) =>
     `${n > 0 ? "+" : ""}${formatMoney(n)}`;
