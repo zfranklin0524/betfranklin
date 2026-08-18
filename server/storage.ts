@@ -870,11 +870,22 @@ class DatabaseStorage {
             if (e.sourceType === "buy_in") return s - SKINS_POT_PER_PLAYER;
             return s + e.amountCents;
           }, 0) / 100;
+        // potNet backs the 30W Pool page ("Excludes betFranklin props") — it
+        // must exclude both side_bet and free_bet (a sportsbook prop-betting
+        // comp, unrelated to the buy-in pots) or the pool totals won't
+        // balance to $0 while any free bet is still in flight.
         const potNet = myLedger
-          .filter((e) => e.sourceType !== "side_bet")
+          .filter((e) => e.sourceType !== "side_bet" && e.sourceType !== "free_bet")
           .reduce((s, e) => s + e.amountCents, 0) / 100;
         const sideBetNet = myLedger
           .filter((e) => e.sourceType === "side_bet")
+          .reduce((s, e) => s + e.amountCents, 0) / 100;
+        // The free-bet credit itself (offsets a comped bet's stake so it's
+        // not the player's own money) — excluded from potNet (30W Pool is a
+        // separate system) but still owed to them overall, so it's counted
+        // here instead of silently dropping out of totalNet.
+        const freeBetNet = myLedger
+          .filter((e) => e.sourceType === "free_bet")
           .reduce((s, e) => s + e.amountCents, 0) / 100;
         return {
           player,
@@ -892,7 +903,8 @@ class DatabaseStorage {
           ctpNet,
           skinsNet,
           sideBetNet,
-          totalNet: net + potNet + sideBetNet,
+          freeBetNet,
+          totalNet: net + potNet + sideBetNet + freeBetNet,
         };
       })
       .sort((a, b) => b.totalNet - a.totalNet);
