@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { usePots, useTeamPoints, useSkinsDayResult, useSideBets, useFundPots, useFinalizeTeamPot, useFinalizeSkins, useCTPHoles, useScrambleUnits } from "@/lib/api";
+import { usePots, useTeamPoints, useSkinsDayResult, useSideBets, useFundPots, useFinalizeTeamPot, useFinalizeSkins, useCTPHoles, useScrambleUnits, useBuyIns } from "@/lib/api";
 import { formatMoney, type PotSummary, type PlayerStanding } from "@shared/schema";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,6 +22,7 @@ export default function ThirtyWestPool() {
   const { data: teamPoints } = useTeamPoints();
   const { data: standings } = useStandings();
   const { data: sideBets } = useSideBets();
+  const { data: buyIns } = useBuyIns();
   const { isAdmin } = useApp();
   const fundPots = useFundPots();
   const finalizeTeam = useFinalizeTeamPot();
@@ -44,6 +45,9 @@ export default function ThirtyWestPool() {
 
   const funded = teamPot?.funded ?? false;
   const activeSideBets = (sideBets ?? []).filter((b) => b.status === "proposed" || b.status === "accepted");
+  const totalCollectedCents = (buyIns ?? []).reduce((s, b) => s + b.amountCents, 0);
+  const paidCount = (buyIns ?? []).filter((b) => b.amountCents > 0).length;
+  const fullyFunded = totalCollectedCents === 240000;
 
   return (
     <div className="space-y-5">
@@ -65,9 +69,11 @@ export default function ThirtyWestPool() {
       </div>
 
       {funded && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/40 px-3 py-2 rounded-lg">
-          <Check className="w-4 h-4 text-win" />
-          Pots funded — $2,400 collected ($100 x 24 players)
+        <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${fullyFunded ? "text-muted-foreground bg-muted/40" : "text-warning bg-warning/10"}`}>
+          {fullyFunded ? <Check className="w-4 h-4 text-win shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+          {fullyFunded
+            ? `Pots funded — $2,400 collected ($100 x 24 players)`
+            : `${formatMoney(totalCollectedCents / 100)} collected from ${paidCount}/24 players — $${(240000 - totalCollectedCents) / 100} short of the full $2,400 pot`}
         </div>
       )}
 
@@ -118,7 +124,7 @@ export default function ThirtyWestPool() {
 
       {/* Running Pool Ledger */}
       {standings && (
-        <PoolLedger standings={standings} funded={funded} pots={[teamPot, ctpPot, skinsPot]} />
+        <PoolLedger standings={standings} funded={funded} pots={[teamPot, ctpPot, skinsPot]} totalCollectedCents={totalCollectedCents} />
       )}
     </div>
   );
@@ -525,7 +531,7 @@ function SkinsDayRow({ label, format, potCents, data, hasData, isFinalized, unit
 }
 
 /* ---------- Running Pool Ledger ---------- */
-function PoolLedger({ standings, funded, pots }: { standings: PlayerStanding[]; funded: boolean; pots: (PotSummary | undefined)[] }) {
+function PoolLedger({ standings, funded, pots, totalCollectedCents }: { standings: PlayerStanding[]; funded: boolean; pots: (PotSummary | undefined)[]; totalCollectedCents: number }) {
   const poolData = standings
     .map((s) => ({
       player: s.player,
@@ -540,13 +546,17 @@ function PoolLedger({ standings, funded, pots }: { standings: PlayerStanding[]; 
   const totalTeam = poolData.reduce((s, p) => s + p.teamPotNet, 0);
   const totalCTP = poolData.reduce((s, p) => s + p.ctpNet, 0);
   const totalSkins = poolData.reduce((s, p) => s + p.skinsNet, 0);
-  // Money still sitting in the $2,400 collected that hasn't been through a
+  // Money still sitting in the $2,400 full pot that hasn't been through a
   // real finalization yet — each pot's full fixed amount only counts once
   // its status is actually "finalized" (not just a live projection).
   const finalizedCents = pots
     .filter((p): p is PotSummary => !!p && p.status === "finalized")
     .reduce((s, p) => s + p.totalCents, 0);
   const unallocated = funded ? 2400 - finalizedCents / 100 : 0;
+  // If less than $2,400 was actually collected, finalized pots still pay
+  // out their full fixed amount — the gap is a real shortfall, not a bug.
+  // This is exactly why the Totals row below won't sum to $0 in that case.
+  const shortfall = (finalizedCents - totalCollectedCents) / 100;
 
   const fmt = (n: number) =>
     `${n > 0 ? "+" : ""}${formatMoney(n)}`;
@@ -620,6 +630,12 @@ function PoolLedger({ standings, funded, pots }: { standings: PlayerStanding[]; 
             <div className="flex justify-between">
               <span className="text-muted-foreground">Unallocated (pending finals)</span>
               <span className="tabular text-warning">{formatMoney(unallocated)}</span>
+            </div>
+          )}
+          {shortfall > 0.01 && (
+            <div className="flex justify-between">
+              <span className="text-warning">Pool shortfall (paid out more than collected)</span>
+              <span className="tabular text-warning font-semibold">{formatMoney(shortfall)}</span>
             </div>
           )}
         </div>
