@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { usePots, useTeamPoints, useSkinsDayResult, useSideBets, useFundPots, useFinalizeTeamPot, useFinalizeSkins, useCTPHoles, useScrambleUnits, useBuyIns } from "@/lib/api";
-import { formatMoney, type PotSummary, type PlayerStanding } from "@shared/schema";
+import { formatMoney, type PotSummary, type PlayerStanding, type BuyIn } from "@shared/schema";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -124,7 +124,7 @@ export default function ThirtyWestPool() {
 
       {/* Running Pool Ledger */}
       {standings && (
-        <PoolLedger standings={standings} funded={funded} pots={[teamPot, ctpPot, skinsPot]} totalCollectedCents={totalCollectedCents} />
+        <PoolLedger standings={standings} funded={funded} pots={[teamPot, ctpPot, skinsPot]} totalCollectedCents={totalCollectedCents} buyIns={buyIns ?? []} />
       )}
     </div>
   );
@@ -531,7 +531,8 @@ function SkinsDayRow({ label, format, potCents, data, hasData, isFinalized, unit
 }
 
 /* ---------- Running Pool Ledger ---------- */
-function PoolLedger({ standings, funded, pots, totalCollectedCents }: { standings: PlayerStanding[]; funded: boolean; pots: (PotSummary | undefined)[]; totalCollectedCents: number }) {
+function PoolLedger({ standings, funded, pots, totalCollectedCents, buyIns }: { standings: PlayerStanding[]; funded: boolean; pots: (PotSummary | undefined)[]; totalCollectedCents: number; buyIns: BuyIn[] }) {
+  const paidById = new Map(buyIns.map((b) => [b.playerId, b.paid && b.amountCents > 0]));
   const poolData = standings
     .map((s) => ({
       player: s.player,
@@ -539,6 +540,7 @@ function PoolLedger({ standings, funded, pots, totalCollectedCents }: { standing
       ctpNet: s.ctpNet,
       skinsNet: s.skinsNet,
       total: s.potNet,
+      paid: paidById.get(s.player.id) ?? false,
     }))
     .sort((a, b) => b.total - a.total);
 
@@ -573,6 +575,12 @@ function PoolLedger({ standings, funded, pots, totalCollectedCents }: { standing
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             30W pool positions only. Excludes betFranklin props.
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-3 h-3 rounded-full bg-win/15 text-win shrink-0">
+              <Check className="w-2 h-2" />
+            </span>
+            = paid the $100 buy-in — tracked for reference only, not netted into the Net total below
           </p>
         </div>
 
@@ -610,7 +618,15 @@ function PoolLedger({ standings, funded, pots, totalCollectedCents }: { standing
               <div className={`col-span-2 ${cellClass(s.skinsNet)}`}>
                 {fmt(s.skinsNet)}
               </div>
-              <div className={`col-span-2 text-right tabular font-semibold ${s.total > 0 ? "text-win" : s.total < 0 ? "text-loss" : ""}`}>
+              <div className={`col-span-2 text-right tabular font-semibold flex items-center justify-end gap-1 ${s.total > 0 ? "text-win" : s.total < 0 ? "text-loss" : ""}`}>
+                {s.paid && (
+                  <span
+                    className="inline-flex items-center justify-center w-3 h-3 rounded-full bg-win/15 text-win shrink-0"
+                    title="Paid $100 buy-in — not netted into this total"
+                  >
+                    <Check className="w-2 h-2" />
+                  </span>
+                )}
                 {fmt(s.total)}
               </div>
             </li>
