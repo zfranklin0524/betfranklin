@@ -851,32 +851,25 @@ class DatabaseStorage {
           net += betNet(b);
         }
         const myLedger = ledger.filter((e) => e.playerId === player.id);
-        // Split whatever they actually paid across the 3 pots, proportional
-        // to the standard $60/$10/$30 ratio — a partial (or $0) buy-in
-        // correction flows through correctly instead of every player being
-        // assumed to have paid the full $100.
-        const buyInEntry = myLedger.find((e) => e.sourceType === "buy_in");
-        const actualBuyIn = buyInEntry ? -buyInEntry.amountCents : 0;
-        const buyInRatio = actualBuyIn / BUY_IN_CENTS;
-        const teamPotDebit = Math.round(TEAM_POT_PER_PLAYER * buyInRatio);
-        const ctpDebit = Math.round(CTP_POT_PER_PLAYER * buyInRatio);
-        const skinsDebit = Math.round(SKINS_POT_PER_PLAYER * buyInRatio);
-        const teamPotNet = (myLedger
+        // Team/CTP/Skins show pure gross winnings — winner gets their full
+        // payout, everyone else $0 — independent of the buy-in entirely.
+        // Whether/how much someone actually paid is tracked separately
+        // (buy_ins) and settled outside these figures, not netted against
+        // their winnings here.
+        const teamPotNet = myLedger
           .filter((e) => e.sourceType === "team_pot")
-          .reduce((s, e) => s + e.amountCents, 0) - teamPotDebit) / 100;
-        const ctpNet = (myLedger
-          .filter((e) => e.sourceType === "ctp")
-          .reduce((s, e) => s + e.amountCents, 0) - ctpDebit) / 100;
-        const skinsNet = (myLedger
-          .filter((e) => e.sourceType === "skins")
-          .reduce((s, e) => s + e.amountCents, 0) - skinsDebit) / 100;
-        // potNet backs the 30W Pool page ("Excludes betFranklin props") — it
-        // must exclude both side_bet and free_bet (a sportsbook prop-betting
-        // comp, unrelated to the buy-in pots) or the pool totals won't
-        // balance to $0 while any free bet is still in flight.
-        const potNet = myLedger
-          .filter((e) => e.sourceType !== "side_bet" && e.sourceType !== "free_bet")
           .reduce((s, e) => s + e.amountCents, 0) / 100;
+        const ctpNet = myLedger
+          .filter((e) => e.sourceType === "ctp")
+          .reduce((s, e) => s + e.amountCents, 0) / 100;
+        const skinsNet = myLedger
+          .filter((e) => e.sourceType === "skins")
+          .reduce((s, e) => s + e.amountCents, 0) / 100;
+        // potNet is the 30W Pool bottom line ("Excludes betFranklin props")
+        // — kept equal to teamPotNet+ctpNet+skinsNet (gross winnings only,
+        // no buy-in, no free_bet, no side_bet) so the ledger table's columns
+        // always sum to its own Net column.
+        const potNet = teamPotNet + ctpNet + skinsNet;
         const sideBetNet = myLedger
           .filter((e) => e.sourceType === "side_bet")
           .reduce((s, e) => s + e.amountCents, 0) / 100;
