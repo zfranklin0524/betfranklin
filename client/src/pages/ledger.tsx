@@ -36,6 +36,9 @@ export default function Ledger() {
           <p className="text-sm text-muted-foreground">
             Net positions across all graded bets. Settle in person.
           </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Buy-In credits back the $100 for anyone who paid it, on top of their pool winnings — $2,400 once all 24 have paid.
+          </p>
         </div>
         <div className="text-right">
           <p className="font-label text-[11px] text-muted-foreground">Total Wagered</p>
@@ -45,24 +48,25 @@ export default function Ledger() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="grid grid-cols-12 gap-2 px-4 py-2 font-label text-[11px] text-muted-foreground border-b-2 border-border">
-            <div className="col-span-1">#</div>
-            <div className="col-span-4">Player</div>
-            <div className="col-span-2 text-right">Bets Net</div>
-            <div className="col-span-2 text-right">Pool Net</div>
-            <div className="col-span-1 text-right">Stk</div>
-            <div className="col-span-2 text-right">Total</div>
+          <div className="grid grid-cols-[1fr_4fr_2fr_2fr_2fr_1fr_2fr] gap-2 px-4 py-2 font-label text-[11px] text-muted-foreground border-b-2 border-border">
+            <div>#</div>
+            <div>Player</div>
+            <div className="text-right">Bets Net</div>
+            <div className="text-right">Pool Net</div>
+            <div className="text-right">Buy-In</div>
+            <div className="text-right">Stk</div>
+            <div className="text-right">Total</div>
           </div>
           <ol className="divide-y divide-border">
             {list.map((s, i) => (
               <li
                 key={s.player.id}
-                className="grid grid-cols-12 gap-2 px-4 py-2.5 items-center text-sm"
+                className="grid grid-cols-[1fr_4fr_2fr_2fr_2fr_1fr_2fr] gap-2 px-4 py-2.5 items-center text-sm"
               >
-                <div className="col-span-1 tabular text-muted-foreground flex items-center gap-1">
+                <div className="tabular text-muted-foreground flex items-center gap-1">
                   {i + 1}
                 </div>
-                <div className="col-span-4 font-medium flex items-center gap-1.5 min-w-0">
+                <div className="font-medium flex items-center gap-1.5 min-w-0">
                   <TeamDot team={s.player.team} />
                   {s.player.id === 14 && (
                     <Crown className="w-3.5 h-3.5 text-accent shrink-0" data-testid="icon-king" title="Reigning King of the West" />
@@ -80,16 +84,19 @@ export default function Ledger() {
                     )}
                   </div>
                 </div>
-                <div className={`col-span-2 text-right tabular ${s.net > 0 ? "text-win" : s.net < 0 ? "text-loss" : "text-muted-foreground"}`}>
+                <div className={`text-right tabular ${s.net > 0 ? "text-win" : s.net < 0 ? "text-loss" : "text-muted-foreground"}`}>
                   {s.net > 0 ? "+" : ""}{formatMoney(s.net)}
                 </div>
-                <div className={`col-span-2 text-right tabular ${s.potNet > 0 ? "text-win" : s.potNet < 0 ? "text-loss" : "text-muted-foreground"}`}>
+                <div className={`text-right tabular ${s.potNet > 0 ? "text-win" : s.potNet < 0 ? "text-loss" : "text-muted-foreground"}`}>
                   {s.potNet > 0 ? "+" : ""}{formatMoney(s.potNet)}
                 </div>
-                <div className={`col-span-1 text-right tabular text-muted-foreground`}>
+                <div className={`text-right tabular ${s.buyInPaid > 0 ? "text-win" : "text-muted-foreground"}`}>
+                  {s.buyInPaid > 0 ? "+" : ""}{formatMoney(s.buyInPaid)}
+                </div>
+                <div className={`text-right tabular text-muted-foreground`}>
                   {formatMoney(s.staked)}
                 </div>
-                <div className={`col-span-2 text-right tabular font-semibold ${s.totalNet > 0 ? "text-win" : s.totalNet < 0 ? "text-loss" : ""}`}>
+                <div className={`text-right tabular font-semibold ${s.totalNet > 0 ? "text-win" : s.totalNet < 0 ? "text-loss" : ""}`}>
                   {s.totalNet > 0 ? "+" : ""}{formatMoney(s.totalNet)}
                 </div>
               </li>

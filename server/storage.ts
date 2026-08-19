@@ -880,6 +880,14 @@ class DatabaseStorage {
         const freeBetNet = myLedger
           .filter((e) => e.sourceType === "free_bet")
           .reduce((s, e) => s + e.amountCents, 0) / 100;
+        // Buy-in ledger entries are stored as a debit (negative amountCents)
+        // when someone pays — flip the sign so paying shows as money that
+        // comes back to them in the final settlement below, on top of (not
+        // netted against) their pool winnings. Unpaid players have no
+        // buy_in entry, so this is 0 for them — never a debt shown here.
+        const buyInPaid = -myLedger
+          .filter((e) => e.sourceType === "buy_in")
+          .reduce((s, e) => s + e.amountCents, 0) / 100;
         return {
           player,
           staked,
@@ -897,7 +905,8 @@ class DatabaseStorage {
           skinsNet,
           sideBetNet,
           freeBetNet,
-          totalNet: net + potNet + sideBetNet + freeBetNet,
+          buyInPaid,
+          totalNet: net + potNet + sideBetNet + freeBetNet + buyInPaid,
         };
       })
       .sort((a, b) => b.totalNet - a.totalNet);

@@ -234,6 +234,7 @@ export interface PlayerStanding {
   skinsNet: number;
   sideBetNet: number;
   freeBetNet: number;
+  buyInPaid: number;
   totalNet: number;
 }
 
