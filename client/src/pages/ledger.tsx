@@ -37,7 +37,7 @@ export default function Ledger() {
             Net positions across all graded bets. Settle in person.
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Buy-In credits back the $100 for anyone who paid it, on top of their pool winnings — $2,400 once all 24 have paid.
+            Buy-In credits back the $100 for anyone who paid, and shows -$100 still owed for anyone who hasn't — on top of their pool winnings.
           </p>
         </div>
         <div className="text-right">
@@ -90,7 +90,7 @@ export default function Ledger() {
                 <div className={`text-right tabular ${s.potNet > 0 ? "text-win" : s.potNet < 0 ? "text-loss" : "text-muted-foreground"}`}>
                   {s.potNet > 0 ? "+" : ""}{formatMoney(s.potNet)}
                 </div>
-                <div className={`text-right tabular ${s.buyInPaid > 0 ? "text-win" : "text-muted-foreground"}`}>
+                <div className={`text-right tabular ${s.buyInPaid > 0 ? "text-win" : s.buyInPaid < 0 ? "text-loss" : "text-muted-foreground"}`}>
                   {s.buyInPaid > 0 ? "+" : ""}{formatMoney(s.buyInPaid)}
                 </div>
                 <div className={`text-right tabular text-muted-foreground`}>

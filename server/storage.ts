@@ -825,6 +825,8 @@ class DatabaseStorage {
     const allBets = this.listBets();
     const ps = this.listPlayers();
     const ledger = db.select().from(ledgerEntries).all();
+    const buyInRows = db.select().from(buyIns).all();
+    const buyInCentsById = new Map(buyInRows.map((b) => [b.playerId, b.amountCents]));
     return ps
       .map((player) => {
         const mine = allBets.filter((b) => b.playerId === player.id);
@@ -880,14 +882,14 @@ class DatabaseStorage {
         const freeBetNet = myLedger
           .filter((e) => e.sourceType === "free_bet")
           .reduce((s, e) => s + e.amountCents, 0) / 100;
-        // Buy-in ledger entries are stored as a debit (negative amountCents)
-        // when someone pays — flip the sign so paying shows as money that
-        // comes back to them in the final settlement below, on top of (not
-        // netted against) their pool winnings. Unpaid players have no
-        // buy_in entry, so this is 0 for them — never a debt shown here.
-        const buyInPaid = -myLedger
-          .filter((e) => e.sourceType === "buy_in")
-          .reduce((s, e) => s + e.amountCents, 0) / 100;
+        // Symmetric buy-in position: paid-in-full shows as +$100 (their
+        // contribution comes back to them in the final settlement, on top
+        // of — not netted against — their pool winnings above); unpaid
+        // shows as -$100 (a real debt still owed into the pool). Partial
+        // payments land proportionally in between. amountCentsPaid defaults
+        // to 0 for a player with no buy_ins row at all.
+        const amountCentsPaid = buyInCentsById.get(player.id) ?? 0;
+        const buyInPaid = (2 * amountCentsPaid - BUY_IN_CENTS) / 100;
         return {
           player,
           staked,
