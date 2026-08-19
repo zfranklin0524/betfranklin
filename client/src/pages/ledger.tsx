@@ -37,7 +37,7 @@ export default function Ledger() {
             Net positions across all graded bets. Settle in person.
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Buy-In credits back the $100 for anyone who paid, and shows -$100 still owed for anyone who hasn't — on top of their pool winnings.
+            Pool Net already nets each person's own $100 buy-in against their pool winnings — paid players just get their winnings, unpaid players have what's left of their $100 debt subtracted out.
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             Free bets are comped by the book (Zach Franklin) — the cost shows as money owed to him, not a credit.
@@ -51,12 +51,11 @@ export default function Ledger() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="grid grid-cols-[1fr_4fr_2fr_2fr_2fr_1fr_2fr] gap-2 px-4 py-2 font-label text-[11px] text-muted-foreground border-b-2 border-border">
+          <div className="grid grid-cols-[1fr_4fr_2fr_2fr_1fr_2fr] gap-2 px-4 py-2 font-label text-[11px] text-muted-foreground border-b-2 border-border">
             <div>#</div>
             <div>Player</div>
             <div className="text-right">Bets Net</div>
             <div className="text-right">Pool Net</div>
-            <div className="text-right">Buy-In</div>
             <div className="text-right">Stk</div>
             <div className="text-right">Total</div>
           </div>
@@ -64,7 +63,7 @@ export default function Ledger() {
             {list.map((s, i) => (
               <li
                 key={s.player.id}
-                className="grid grid-cols-[1fr_4fr_2fr_2fr_2fr_1fr_2fr] gap-2 px-4 py-2.5 items-center text-sm"
+                className="grid grid-cols-[1fr_4fr_2fr_2fr_1fr_2fr] gap-2 px-4 py-2.5 items-center text-sm"
               >
                 <div className="tabular text-muted-foreground flex items-center gap-1">
                   {i + 1}
@@ -92,9 +91,6 @@ export default function Ledger() {
                 </div>
                 <div className={`text-right tabular ${s.potNet > 0 ? "text-win" : s.potNet < 0 ? "text-loss" : "text-muted-foreground"}`}>
                   {s.potNet > 0 ? "+" : ""}{formatMoney(s.potNet)}
-                </div>
-                <div className={`text-right tabular ${s.buyInPaid > 0 ? "text-win" : s.buyInPaid < 0 ? "text-loss" : "text-muted-foreground"}`}>
-                  {s.buyInPaid > 0 ? "+" : ""}{formatMoney(s.buyInPaid)}
                 </div>
                 <div className={`text-right tabular text-muted-foreground`}>
                   {formatMoney(s.staked)}

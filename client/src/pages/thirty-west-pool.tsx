@@ -580,7 +580,7 @@ function PoolLedger({ standings, funded, pots, totalCollectedCents, buyIns }: { 
             <span className="inline-flex items-center justify-center w-3 h-3 rounded-full bg-win/15 text-win shrink-0">
               <Check className="w-2 h-2" />
             </span>
-            = paid the $100 buy-in — tracked for reference only, not netted into the Net total below
+            = paid the $100 buy-in. Net already reflects it: paid players just get their gross winnings back; unpaid players have their remaining $100 owed netted out of theirs.
           </p>
         </div>
 
@@ -622,7 +622,7 @@ function PoolLedger({ standings, funded, pots, totalCollectedCents, buyIns }: { 
                 {s.paid && (
                   <span
                     className="inline-flex items-center justify-center w-3 h-3 rounded-full bg-win/15 text-win shrink-0"
-                    title="Paid $100 buy-in — not netted into this total"
+                    title="Paid $100 buy-in — this total is their gross winnings, already square on the buy-in"
                   >
                     <Check className="w-2 h-2" />
                   </span>
@@ -642,6 +642,9 @@ function PoolLedger({ standings, funded, pots, totalCollectedCents, buyIns }: { 
             <span className={`col-span-2 text-right tabular ${cellClass(totalSkins)}`}>{fmt(totalSkins)}</span>
             <span className={`col-span-2 text-right tabular font-semibold ${totalPool > 0 ? "text-win" : totalPool < 0 ? "text-loss" : ""}`}>{fmt(totalPool)}</span>
           </div>
+          <p className="text-[10px] text-muted-foreground">
+            Team/CTP/Skins totals sum to the $2,400 gross pot. Net totals to what's actually owed after buy-ins — it always equals exactly what's been collected.
+          </p>
           {funded && unallocated !== 0 && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Unallocated (pending finals)</span>
@@ -649,9 +652,11 @@ function PoolLedger({ standings, funded, pots, totalCollectedCents, buyIns }: { 
             </div>
           )}
           {shortfall > 0.01 && (
-            <div className="flex justify-between">
-              <span className="text-warning">Pool shortfall (paid out more than collected)</span>
-              <span className="tabular text-warning font-semibold">{formatMoney(shortfall)}</span>
+            <div className="flex justify-between items-start gap-2">
+              <span className="text-muted-foreground">
+                $2,400 gross pot vs. {formatMoney(totalCollectedCents / 100)} collected — the {formatMoney(shortfall)} gap is already netted into unpaid players' Net above, not extra cash you need to find
+              </span>
+              <span className="tabular text-muted-foreground font-semibold shrink-0">{formatMoney(shortfall)}</span>
             </div>
           )}
         </div>

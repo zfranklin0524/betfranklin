@@ -862,11 +862,10 @@ class DatabaseStorage {
           net += betNet(b);
         }
         const myLedger = ledger.filter((e) => e.playerId === player.id);
-        // Team/CTP/Skins show pure gross winnings — winner gets their full
-        // payout, everyone else $0 — independent of the buy-in entirely.
-        // Whether/how much someone actually paid is tracked separately
-        // (buy_ins) and settled outside these figures, not netted against
-        // their winnings here.
+        // Gross pot winnings per category — who won what, untouched by
+        // buy-in status. These three always sum to the fixed $2,400 pot
+        // size (Team $1,440 + CTP $240 + Skins $720) regardless of who's
+        // paid; they're the "what did they win" figures.
         const teamPotNet = myLedger
           .filter((e) => e.sourceType === "team_pot")
           .reduce((s, e) => s + e.amountCents, 0) / 100;
@@ -876,11 +875,24 @@ class DatabaseStorage {
         const skinsNet = myLedger
           .filter((e) => e.sourceType === "skins")
           .reduce((s, e) => s + e.amountCents, 0) / 100;
-        // potNet is the 30W Pool bottom line ("Excludes betFranklin props")
-        // — kept equal to teamPotNet+ctpNet+skinsNet (gross winnings only,
-        // no buy-in, no free_bet, no side_bet) so the ledger table's columns
-        // always sum to its own Net column.
-        const potNet = teamPotNet + ctpNet + skinsNet;
+        const grossPoolWinnings = teamPotNet + ctpNet + skinsNet;
+        // amountCentsPaid defaults to 0 for a player with no buy_ins row.
+        const amountCentsPaid = buyInCentsById.get(player.id) ?? 0;
+        // Buy-In as its own reference figure: +$100 paid in full, -$100
+        // unpaid, proportional in between. Not summed into totalNet below
+        // (that would double-count it) — it's here purely so the UI can
+        // show whether/how much someone paid.
+        const buyInPaid = (2 * amountCentsPaid - BUY_IN_CENTS) / 100;
+        // potNet ("what's actually owed from the pool") nets each player's
+        // own buy-in obligation against their own winnings — a paid player
+        // already spent their $100 funding the pot, so they're just owed
+        // their gross winnings; an unpaid player's winnings are reduced by
+        // whatever's left of their $100 debt (going negative if they owe
+        // more than they won). This is a real invariant, not a rounding
+        // coincidence: summed across everyone it always equals exactly the
+        // cash already collected, because sum(gross) - sum(100 - paid) =
+        // sum(gross) - 2400 + sum(paid), and sum(gross) is always 2400.
+        const potNet = grossPoolWinnings - (BUY_IN_CENTS - amountCentsPaid) / 100;
         const sideBetNet = myLedger
           .filter((e) => e.sourceType === "side_bet")
           .reduce((s, e) => s + e.amountCents, 0) / 100;
@@ -897,14 +909,6 @@ class DatabaseStorage {
             : myLedger
                 .filter((e) => e.sourceType === "free_bet")
                 .reduce((s, e) => s + e.amountCents, 0) / 100;
-        // Symmetric buy-in position: paid-in-full shows as +$100 (their
-        // contribution comes back to them in the final settlement, on top
-        // of — not netted against — their pool winnings above); unpaid
-        // shows as -$100 (a real debt still owed into the pool). Partial
-        // payments land proportionally in between. amountCentsPaid defaults
-        // to 0 for a player with no buy_ins row at all.
-        const amountCentsPaid = buyInCentsById.get(player.id) ?? 0;
-        const buyInPaid = (2 * amountCentsPaid - BUY_IN_CENTS) / 100;
         return {
           player,
           staked,
@@ -923,7 +927,9 @@ class DatabaseStorage {
           sideBetNet,
           freeBetNet,
           buyInPaid,
-          totalNet: net + potNet + sideBetNet + freeBetNet + buyInPaid,
+          // buyInPaid is NOT added here — it's already netted into potNet
+          // above, so summing it again would double-count it.
+          totalNet: net + potNet + sideBetNet + freeBetNet,
         };
       })
       .sort((a, b) => b.totalNet - a.totalNet);
