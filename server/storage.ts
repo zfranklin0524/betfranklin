@@ -827,6 +827,15 @@ class DatabaseStorage {
     const ledger = db.select().from(ledgerEntries).all();
     const buyInRows = db.select().from(buyIns).all();
     const buyInCentsById = new Map(buyInRows.map((b) => [b.playerId, b.amountCents]));
+    // Free bets are comped by the book (Zach Franklin) — every free_bet
+    // credit handed to a player is a real cost he's fronting, with no
+    // offsetting entry anywhere else (his covering bet on the market is a
+    // separate, already-zero-sum wager captured in `net`). Total it here so
+    // it can be charged back to his own row below instead of vanishing.
+    const totalFreeBetCreditCents = ledger
+      .filter((e) => e.sourceType === "free_bet")
+      .reduce((s, e) => s + e.amountCents, 0);
+    const book = this.getBookPlayer();
     return ps
       .map((player) => {
         const mine = allBets.filter((b) => b.playerId === player.id);
@@ -878,10 +887,16 @@ class DatabaseStorage {
         // The free-bet credit itself (offsets a comped bet's stake so it's
         // not the player's own money) — excluded from potNet (30W Pool is a
         // separate system) but still owed to them overall, so it's counted
-        // here instead of silently dropping out of totalNet.
-        const freeBetNet = myLedger
-          .filter((e) => e.sourceType === "free_bet")
-          .reduce((s, e) => s + e.amountCents, 0) / 100;
+        // here instead of silently dropping out of totalNet. The book's own
+        // row instead carries the negative of every credit handed out
+        // across the whole field — he's the one actually fronting the comp,
+        // so it shows as money he's owed back, not a credit to himself.
+        const freeBetNet =
+          book && player.id === book.id
+            ? -totalFreeBetCreditCents / 100
+            : myLedger
+                .filter((e) => e.sourceType === "free_bet")
+                .reduce((s, e) => s + e.amountCents, 0) / 100;
         // Symmetric buy-in position: paid-in-full shows as +$100 (their
         // contribution comes back to them in the final settlement, on top
         // of — not netted against — their pool winnings above); unpaid

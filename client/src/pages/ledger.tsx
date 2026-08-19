@@ -39,6 +39,9 @@ export default function Ledger() {
           <p className="text-[11px] text-muted-foreground mt-0.5">
             Buy-In credits back the $100 for anyone who paid, and shows -$100 still owed for anyone who hasn't — on top of their pool winnings.
           </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Free bets are comped by the book (Zach Franklin) — the cost shows as money owed to him, not a credit.
+          </p>
         </div>
         <div className="text-right">
           <p className="font-label text-[11px] text-muted-foreground">Total Wagered</p>
